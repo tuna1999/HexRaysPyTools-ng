@@ -135,6 +135,61 @@ class _MockIdaModule:
     class ctree_parentee_t:  # noqa: N801 - keep IDA SWIG casing
         pass
 
+    # UI base types that production code subclasses (PluginForm for dock
+    # forms, GraphViewer for graph widgets, Choose for list choosers). Same
+    # rationale as plugin_t above: a MagicMock base would make
+    # `class StructureBuilder(idaapi.PluginForm)` produce a mock instance
+    # whose __init__ never runs, so attribute assertions in widget tests fail.
+    # Provide real bases so subclassing + __init__ work under mock_ida.
+    class PluginForm:  # noqa: N801 - keep IDA SWIG casing
+        """Stand-in for idaapi.PluginForm.
+
+        The real PluginForm.FormToPySideWidget is a staticmethod; tests that
+        exercise OnCreate patch it at the class level, so no implementation
+        is needed here.
+        """
+
+    class GraphViewer:  # noqa: N801 - keep IDA SWIG casing
+        """Stand-in for idaapi.GraphViewer.
+
+        Production overrides call self.Clear / AddNode / AddEdge / Refresh and
+        index self[node_id]; these are provided as no-op stubs so __init__ and
+        OnRefresh can be exercised without IDA.
+        """
+
+        def __init__(self, title: str = "") -> None:
+            self._title = title
+            self._nodes: list[Any] = []
+
+        def Clear(self) -> None:  # noqa: N802 - keep IDA SWIG casing
+            self._nodes = []
+
+        def AddNode(self, node: Any) -> int:  # noqa: N802 - keep IDA SWIG casing
+            self._nodes.append(node)
+            return len(self._nodes) - 1
+
+        def AddEdge(self, src: int, dst: int) -> None:  # noqa: N802 - keep IDA SWIG casing
+            pass
+
+        def Refresh(self) -> None:  # noqa: N802 - keep IDA SWIG casing
+            pass
+
+        def __getitem__(self, node_id: int) -> Any:
+            return self._nodes[node_id]
+
+    class Choose:  # noqa: N801 - keep IDA SWIG casing
+        """Stand-in for idaapi.Choose so ui.chooser.MyChoose subclasses cleanly."""
+
+        # Common Choose flags referenced by production code.
+        CH_MODAL: int = 0x00000001
+        # Column format flags (choose_column_type_t in IDA SDK). Production
+        # code ORs widths with these (e.g. `10 | Choose.CHCOL_PLAIN`).
+        CHCOL_PLAIN: int = 0x00000001
+
+        def __init__(self, title: str = "", cols: list[Any] | None = None, **kwargs: Any) -> None:
+            self._title = title
+            self._cols = cols or []
+
     def __getattr__(self, name: str) -> Any:
         # Names starting with "_" are real attributes (Python internals, the
         # constants above). Anything else is a mock. Cache in __dict__ so
