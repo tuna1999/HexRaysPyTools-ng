@@ -117,6 +117,21 @@ class _MockIdaModule:
     INF_SHORT_DN: int = 0x00000003
     INF_LONG_DN: int = 0x00000002
 
+    # SWIG base types that production code subclasses (e.g. plugin_t,
+    # action_handler_t). These MUST be real classes, not MagicMocks — a
+    # MagicMock base makes the subclass itself a MagicMock instance, so
+    # `class MyPlugin(idaapi.plugin_t)` would silently produce a mock instead
+    # of a real class. Provide a plain base so subclassing works in tests and
+    # in the bare `python -c` import verification.
+    class plugin_t:  # noqa: N801 - keep IDA SWIG casing
+        pass
+
+    class action_handler_t:  # noqa: N801 - keep IDA SWIG casing
+        pass
+
+    class action_t:  # noqa: N801 - keep IDA SWIG casing
+        pass
+
     def __getattr__(self, name: str) -> Any:
         # Names starting with "_" are real attributes (Python internals, the
         # constants above). Anything else is a mock. Cache in __dict__ so
