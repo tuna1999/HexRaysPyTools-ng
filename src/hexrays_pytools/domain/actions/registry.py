@@ -66,8 +66,8 @@ class ActionRegistry:
 
     def register_all(self) -> None:
         """Import and register all 27 actions."""
-        for action_cls in self._build_actions():
-            self._register_one(action_cls())
+        for action in self._build_actions():
+            self._register_one(action)
 
     def _build_actions(self) -> list:  # type: ignore[type-arg]
         """Lazy-import all action classes. Returns instances."""
