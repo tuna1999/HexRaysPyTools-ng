@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .recon.workspace import ReconWorkspace  # type: ignore[import-untyped]
+    from .recon.workspace import ReconWorkspace
     from .templated.templated_types import TemplatedTypes  # type: ignore[import-untyped]
     from .xrefs.xref_storage import XrefStorage  # type: ignore[import-untyped]
 
@@ -67,7 +67,7 @@ class Session:
         """Load settings from HCLI ida-settings into session fields."""
         # settings.py is created in Task 1.4; fall back to defaults here
         try:
-            from .settings import load_into  # type: ignore[import-untyped]
+            from .settings import load_into
 
             load_into(self)
         except ImportError:
