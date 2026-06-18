@@ -101,12 +101,13 @@ HexRaysPyTools/
 
 ---
 
-### Task 0.1: Project skeleton (pyproject.toml, .gitignore, .python-version)
+### Task 0.1: Project skeleton (pyproject.toml, .gitignore, .python-version, README.md)
 
 **Files:**
 - Create: `pyproject.toml`
 - Create: `.gitignore`
 - Create: `.python-version`
+- Create: `README.md` (minimal — full version in Phase 7)
 
 **Interfaces:**
 - Consumes: nothing
@@ -120,7 +121,21 @@ Write the file `D:\re_dev_projects\ida-plugins\HexRaysPyTools\.python-version` w
 3.11
 ```
 
-- [ ] **Step 2: Create `.gitignore`**
+- [ ] **Step 2: Create `README.md` (minimal)**
+
+Write the file `D:\re_dev_projects\ida-plugins\HexRaysPyTools\README.md` with the following content:
+
+```markdown
+# HexRaysPyTools
+
+Comprehensive toolkit for Hex-Rays decompiler.
+
+See [docs/superpowers/specs/2026-06-18-hexrays-pytools-rewrite-design.md](docs/superpowers/specs/2026-06-18-hexrays-pytools-rewrite-design.md) for the rewrite design.
+```
+
+> **Why minimal:** hatchling requires `readme = "README.md"` to resolve. A stub avoids `pip install` error. Full README content is created in Task 7.2.
+
+- [ ] **Step 3: Create `.gitignore`**
 
 Write the file `D:\re_dev_projects\ida-plugins\HexRaysPyTools\.gitignore` with the following content:
 
@@ -152,7 +167,7 @@ htmlcov/
 $HXP_*
 ```
 
-- [ ] **Step 3: Create `pyproject.toml`**
+- [ ] **Step 4: Create `pyproject.toml`**
 
 Write the file `D:\re_dev_projects\ida-plugins\HexRaysPyTools\pyproject.toml` with the following content:
 
@@ -216,7 +231,7 @@ warn_unused_ignores = true
 disallow_untyped_defs = true
 ```
 
-- [ ] **Step 4: Verify install works**
+- [ ] **Step 5: Verify install works**
 
 Run:
 ```bash
@@ -226,7 +241,7 @@ pip install -e ".[dev]"
 
 Expected: Installation succeeds. If it fails with "ERROR: file:///D:/re_dev_projects/ida-plugins/HexRaysPyTools does not appear to be a Python project: 'pyproject.toml' missing", check that pyproject.toml is in the repo root.
 
-- [ ] **Step 5: Verify tooling works**
+- [ ] **Step 6: Verify tooling works**
 
 Run:
 ```bash
@@ -237,11 +252,11 @@ pytest --version
 
 Expected: ruff reports "All checks passed!" (no Python files to check yet is OK), mypy and pytest print version info.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add pyproject.toml .gitignore .python-version
-git commit -m "chore: add project skeleton (pyproject.toml, .gitignore, .python-version)"
+git add pyproject.toml .gitignore .python-version README.md
+git commit -m "chore: add project skeleton (pyproject.toml, .gitignore, .python-version, README.md)"
 ```
 
 ---
