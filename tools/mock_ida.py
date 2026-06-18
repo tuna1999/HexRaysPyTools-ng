@@ -149,13 +149,44 @@ class _MockIdaModule:
         return mock
 
 
+# Qt binding modules that should only be mocked when NOT importable.
+# If real PySide6/PyQt5 is installed, tests need the real classes (e.g.
+# QAbstractTableModel) so production subclasses bind their real Python methods.
+# A MagicMock-backed ``QtCore.QAbstractTableModel`` cannot be subclassed: the
+# subclass's own methods get shadowed by the mock, so ``m.rowCount()`` returns
+# a MagicMock instead of calling the user's implementation.
+QT_MODULES: tuple[str, ...] = (
+    "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
+    "PyQt5", "PyQt5.QtCore", "PyQt5.QtWidgets", "PyQt5.QtGui",
+)
+
+
+def _is_importable(mod_name: str) -> bool:
+    """Return True if the top-level module can be imported."""
+    top = mod_name.split(".", 1)[0]
+    try:
+        import importlib.util
+        return importlib.util.find_spec(top) is not None
+    except (ImportError, ValueError, ModuleNotFoundError):
+        return False
+
+
 def install() -> None:
-    """Install all mock IDA modules into sys.modules. Idempotent."""
+    """Install all mock IDA modules into sys.modules. Idempotent.
+
+    Qt bindings (PySide6/PyQt5) are only mocked when they are NOT importable
+    in the current environment. When real Qt is present, tests run against it
+    (use ``QT_QPA_PLATFORM=offscreen`` for headless runs); this is required for
+    tests that subclass ``QAbstractTableModel`` and similar.
+    """
     for mod_name in MOCK_MODULES:
-        if mod_name not in sys.modules:
-            # mypy: sys.modules is typed as dict[str, Module]; a MagicMock-backed
-            # catch-all is intentional here. The mismatch is a known mypy limitation.
-            sys.modules[mod_name] = _MockIdaModule()  # type: ignore[assignment]
+        if mod_name in sys.modules:
+            continue
+        if mod_name in QT_MODULES and _is_importable(mod_name):
+            continue
+        # mypy: sys.modules is typed as dict[str, Module]; a MagicMock-backed
+        # catch-all is intentional here. The mismatch is a known mypy limitation.
+        sys.modules[mod_name] = _MockIdaModule()  # type: ignore[assignment]
 
 
 def reset() -> None:
