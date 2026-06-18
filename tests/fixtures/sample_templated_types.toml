@@ -1,0 +1,24 @@
+["std::vector<T>"]
+base_name = "std_vector_{1}"
+types = ["T"]
+struct = """
+struct std_vector_{1} {{
+    {0} *_Myfirst;
+    {0} *_Mylast;
+    {0} *_Myend;
+}};
+"""
+
+["std::map<K,V>"]
+base_name = "std_map_{1}_{3}"
+types = ["K", "V"]
+struct = """
+struct std_pair_{1}_{3} {{
+    {0} first;
+    {2} second;
+}};
+struct std_map_{1}_{3} {{
+    std_pair_{1}_{3} *_Myhead;
+    unsigned long long _Mysize;
+}};
+"""
