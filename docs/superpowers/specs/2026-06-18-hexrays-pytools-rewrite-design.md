@@ -1,8 +1,11 @@
 # HexRaysPyTools Rewrite — Design Spec
 
 **Date:** 2026-06-18
+
 **Status:** Draft — pending user review
+
 **Target version:** 2.0.0
+
 **Target platform:** IDA Pro 9.0–9.2 (Python 3.11+)
 
 ---
@@ -21,7 +24,7 @@ Rewrite the legacy `HexRaysPyTools` IDA plugin (~6567 LOC, Python 2/3 hybrid, ID
 
 ---
 
-## 2. Goals & Non-Goals
+## 2. Goals &amp; Non-Goals
 
 ### 2.1 Goals (in scope)
 
@@ -62,13 +65,13 @@ Layer 1: Pure Python (no IDA, pytest-friendly)
 
 Strict dependency direction: each layer depends only on layers below it.
 
-**Layer 1 — `pure/`:** Pure-Python logic that needs no IDA at all. Easily testable. Examples: `name_mangle.py` (sanitize demangled C++ names), `scoring.py` (member collision scoring heuristic), `toml_template.py` (validate & render templated types TOML), `result.py` (`Result`/`Option` types).
+**Layer 1 — `pure/`:** Pure-Python logic that needs no IDA at all. Easily testable. Examples: `name_mangle.py` (sanitize demangled C++ names), `scoring.py` (member collision scoring heuristic), `toml_template.py` (validate &amp; render templated types TOML), `result.py` (`Result`/`Option` types).
 
 **Layer 2 — `infra/`:** Thin wrappers around IDA API to enable easy mocking. Examples: `ida_api/hexrays.py` (re-export `ida_hexrays.*`), `idb/netnode.py` (netnode storage helpers), `arch/arch.py` (`is_code_ea`, `get_ptr` with ARM/x86 abstraction), `logging.py` (centralized logger).
 
 **Layer 3 — `domain/`:** The business logic of the plugin. No Qt code in this layer except the `QAbstractTableModel` subclass in `domain/recon/structure_model.py`. Sub-packages: `types/`, `scanner/`, `recon/`, `browser/`, `xrefs/`, `graph/`, `templated/`, `til/`, `ctree/`, `actions/`.
 
-**Layer 4 — Plugin entry & wiring:** `plugin.py` (the `plugin_t` subclass), `__main__.py` (defines `PLUGIN_ENTRY`), `session.py` (the state container), `settings.py` (HCLI settings wrapper), `logging_setup.py`.
+**Layer 4 — Plugin entry &amp; wiring:** `plugin.py` (the `plugin_t` subclass), `__main__.py` (defines `PLUGIN_ENTRY`), `session.py` (the state container), `settings.py` (HCLI settings wrapper), `logging_setup.py`.
 
 **Layer 5 — `ui/`:** Qt widgets that depend on domain layer models injected via constructor. Examples: `widgets/structure_builder.py`, `widgets/class_viewer.py`, `widgets/graph_viewer.py`, `chooser.py`.
 
@@ -170,31 +173,33 @@ HexRaysPyTools/                                ← repo root
 ### 4.1 File naming
 
 - `snake_case` for all `.py` files (PEP 8)
-- Sub-package names are singular
+- Sub-package naming convention: **singular** for conceptual units (`scanner/`, `browser/`, `ctree/`, `recon/`, `til/`), **plural** for collections of items (`actions/`, `xrefs/`).
 - Sub-package `__init__.py` are empty (use explicit imports for traceability)
 - `hexrays_pytools_entry.py` lives at repo root (HCLI entry stub)
 
 ### 4.2 File mapping from original
 
-| Original (6567 LOC) | New | Notes |
-|---|---|---|
-| `HexRaysPyTools.py` (50) | `__main__.py` + `plugin.py` | Separate entry point from plugin class |
-| `settings.py` (75) | `settings.py` | Uses `ida_settings` package (HCLI) |
-| `api.py` (579) | `scanner/visitor_base.py` + `scanner/scanned_object.py` | Split two concerns |
-| `forms.py` (404) | `ui/widgets/*` + `ui/chooser.py` | Fix `FormToPyQtWidget` |
-| `core/cache.py` (72) | `recon/workspace.py` + `session.py` | Globals → Session fields |
-| `core/classes.py` (618) | `browser/*` (4 files) | Split 4 classes; fix QRegExp |
-| `core/common.py` (121) | `pure/name_mangle.py` | Pure-layer extraction |
-| `core/const.py` (60) | `infra/ida_api/typeinf.py` + `session.py` | Constants vs runtime init |
-| `core/helper.py` (435) | Split into 5 files | God module → focused modules |
-| `core/structure_graph.py` (191) | `graph/structure_graph.py` | Set-based DFS, `logger.warning` |
-| `core/struct_xrefs.py` (109) | `xrefs/xref_storage.py` | Netnode-backed |
-| `core/temporary_structure.py` (1073) | Split into 4 files | 1073-line file → 4 focused files |
-| `core/templated_types.py` (65) | `templated/templated_types.py` + `pure/toml_template.py` | `tomllib`, validation |
-| `core/type_library.py` (72) | `til/type_library.py` | Remove ctypes FFI |
-| `core/variable_scanner.py` (337) | `scanner/member_extractor.py` | Remove globals |
-| `callbacks/*` (16 files) | `ctree/*` + `actions/*` | Split by concern |
-| `types/templated_types.toml` | `domain/templated/data/templated_types.toml` | Move into package data |
+
+| Original (6567 LOC)                  | New                                                      | Notes                                  |
+| ------------------------------------ | -------------------------------------------------------- | -------------------------------------- |
+| `HexRaysPyTools.py` (50)             | `__main__.py` + `plugin.py`                              | Separate entry point from plugin class |
+| `settings.py` (75)                   | `settings.py`                                            | Uses `ida_settings` package (HCLI)     |
+| `api.py` (579)                       | `scanner/visitor_base.py` + `scanner/scanned_object.py`  | Split two concerns                     |
+| `forms.py` (404)                     | `ui/widgets/*` + `ui/chooser.py`                         | Fix `FormToPyQtWidget`                 |
+| `core/cache.py` (72)                 | `recon/workspace.py` + `session.py`                      | Globals → Session fields               |
+| `core/classes.py` (618)              | `browser/*` (4 files)                                    | Split 4 classes; fix QRegExp           |
+| `core/common.py` (121)               | `pure/name_mangle.py`                                    | Pure-layer extraction                  |
+| `core/const.py` (60)                 | `infra/ida_api/typeinf.py` + `session.py`                | Constants vs runtime init              |
+| `core/helper.py` (435)               | Split into 6 files: `domain/types/{tinfo_utils,func_type,udt_builder}.py`, `domain/ctree/ctree_utils.py`, `infra/idb/netnode.py`, `infra/arch/arch.py` | God module → focused modules           |
+| `core/structure_graph.py` (191)      | `graph/structure_graph.py`                               | Set-based DFS, `logger.warning`        |
+| `core/struct_xrefs.py` (109)         | `xrefs/xref_storage.py`                                  | Netnode-backed                         |
+| `core/temporary_structure.py` (1073) | Split into 4 files                                       | 1073-line file → 4 focused files       |
+| `core/templated_types.py` (65)       | `templated/templated_types.py` + `pure/toml_template.py` | `tomllib`, validation                  |
+| `core/type_library.py` (72)          | `til/type_library.py`                                    | Remove ctypes FFI                      |
+| `core/variable_scanner.py` (337)     | `scanner/member_extractor.py`                            | Remove globals                         |
+| `callbacks/*` (16 files)             | `ctree/*` + `actions/*`                                  | Split by concern                       |
+| `types/templated_types.toml`         | `domain/templated/data/templated_types.toml`             | Move into package data                 |
+
 
 ---
 
@@ -217,7 +222,7 @@ HexRaysPyTools/                                ← repo root
     "pythonDependencies": [],
     "platforms": ["windows-x86_64", "linux-x86_64", "macos-aarch64"],
     "urls": {
-      "repository": "https://github.com/yourname/HexRaysPyTools"
+      "repository": "https://github.com/EliteClassRoom/HexRaysPyTools"
     },
     "authors": [
       {"name": "Original Authors (see LICENSE)", "email": "noreply@example.com"},
@@ -287,7 +292,14 @@ Source distribution: the ZIP bundles the full source package. No PyPI publishing
 
 ### 5.4 Build script — `tools/build_plugin.py`
 
-Reads version from `pyproject.toml`, creates a ZIP archive in `dist/`. Validates structure matches HCLI requirements.
+Reads version from `pyproject.toml`, creates a ZIP archive in `dist/` containing:
+
+- `ida-plugin.json` (from repo root)
+- `hexrays_pytools_entry.py` (from `tools/`)
+- `LICENSE` and `README.md` (from repo root)
+- Bundled `hexrays_pytools/` package (from `src/hexrays_pytools/`)
+
+Validates that the resulting archive has `ida-plugin.json` at root and that `entryPoint` field matches a real file in the archive.
 
 ### 5.5 `pyproject.toml` essentials
 
@@ -299,58 +311,64 @@ Reads version from `pyproject.toml`, creates a ZIP archive in `dist/`. Validates
 
 ---
 
-## 6. Feature Inventory & Parity
+## 6. Feature Inventory &amp; Parity
 
 ### 6.1 27 actions (user-facing)
 
-| # | Class | Hotkey | New file | Phase |
-|---|---|---|---|---|
-| 1 | ShallowScanVariable | `F` | `actions/scanners.py` | P4 |
-| 2 | DeepScanVariable | `Shift+Alt+F` | `actions/scanners.py` | P4 |
-| 3 | RecognizeShape | — | `actions/scanners.py` | P4 |
-| 4 | DeepScanReturn | — | `actions/scanners.py` | P4 |
-| 5 | DeepScanFunctions | — | `actions/scanners.py` | P4 |
-| 6 | ShowStructureBuilder | `Alt+F8` | `actions/form_requests.py` | P4 |
-| 7 | ShowGraph | `G` | `actions/form_requests.py` | P4 |
-| 8 | ShowClasses | `Alt+F1` | `actions/form_requests.py` | P4 |
-| 9 | RecastItemLeft | `Shift+L` | `ctree/recast.py` + `actions/recast_action.py` | P5 |
-| 10 | RecastItemRight | `Shift+R` | `ctree/recast.py` + `actions/recast_action.py` | P5 |
-| 11 | RenameOther | `Ctrl+N` | `ctree/rename.py` + `actions/rename_action.py` | P5 |
-| 12 | RenameInside | `Shift+N` | `ctree/rename.py` + `actions/rename_action.py` | P5 |
-| 13 | RenameOutside | `Ctrl+Shift+N` | `ctree/rename.py` + `actions/rename_action.py` | P5 |
-| 14 | RenameMemberFromFunctionName | **changed to `Ctrl+Alt+N`** (fix B10) | `ctree/rename.py` + `actions/rename_action.py` | P5 |
-| 15 | RenameUsingAssert | — | `ctree/rename.py` + `actions/rename_action.py` | P5 |
-| 16 | PropagateName | `P` | `ctree/rename.py` + `actions/rename_action.py` | P5 |
-| 17 | ConvertToUsercall | — | `actions/function_signature.py` | P4 |
-| 18 | AddRemoveReturn | — | `actions/function_signature.py` | P4 |
-| 19 | RemoveArgument | — | `actions/function_signature.py` | P4 |
-| 20 | CreateNewField | `Ctrl+F` | `actions/struct_creation.py` | P4 |
-| 21 | CreateVtable | `V` | `actions/virtual_table.py` | P4 |
-| 22 | GetStructureBySize | — | `actions/structs_by_size.py` | P4 |
-| 23 | SelectContainingStructure | — | `ctree/negative_offsets.py` + `actions/containing_structure.py` | P5 |
-| 24 | ResetContainingStructure | — | `ctree/negative_offsets.py` + `actions/containing_structure.py` | P5 |
-| 25 | FindFieldXrefs | `Ctrl+X` | `actions/struct_xref.py` | P4 |
-| 26 | SwapThenElse | `Shift+Alt+S` | `ctree/swap_if.py` + `actions/swap_if_action.py` | P5 |
-| 27 | GuessAllocation | — | `actions/guess_allocation.py` | P4 |
+
+| #   | Class                        | Hotkey                                | New file                                                        | Phase |
+| --- | ---------------------------- | ------------------------------------- | --------------------------------------------------------------- | ----- |
+| 1   | ShallowScanVariable          | `F`                                   | `actions/scanners.py`                                           | P4    |
+| 2   | DeepScanVariable             | `Shift+Alt+F`                         | `actions/scanners.py`                                           | P4    |
+| 3   | RecognizeShape               | —                                     | `actions/scanners.py`                                           | P4    |
+| 4   | DeepScanReturn               | —                                     | `actions/scanners.py`                                           | P4    |
+| 5   | DeepScanFunctions            | —                                     | `actions/scanners.py`                                           | P4    |
+| 6   | ShowStructureBuilder         | `Alt+F8`                              | `actions/form_requests.py`                                      | P4    |
+| 7   | ShowGraph                    | `G`                                   | `actions/form_requests.py`                                      | P4    |
+| 8   | ShowClasses                  | `Alt+F1`                              | `actions/form_requests.py`                                      | P4    |
+| 9   | RecastItemLeft               | `Shift+L`                             | `ctree/recast.py` + `actions/recast_action.py`                  | P5    |
+| 10  | RecastItemRight              | `Shift+R`                             | `ctree/recast.py` + `actions/recast_action.py`                  | P5    |
+| 11  | RenameOther                  | `Ctrl+N`                              | `ctree/rename.py` + `actions/rename_action.py`                  | P5    |
+| 12  | RenameInside                 | `Shift+N`                             | `ctree/rename.py` + `actions/rename_action.py`                  | P5    |
+| 13  | RenameOutside                | `Ctrl+Shift+N`                        | `ctree/rename.py` + `actions/rename_action.py`                  | P5    |
+| 14  | RenameMemberFromFunctionName | **changed to `Ctrl+Alt+N`** (fix B10) | `ctree/rename.py` + `actions/rename_action.py`                  | P5    |
+| 15  | RenameUsingAssert            | —                                     | `ctree/rename.py` + `actions/rename_action.py`                  | P5    |
+| 16  | PropagateName                | `P`                                   | `ctree/rename.py` + `actions/rename_action.py`                  | P5    |
+| 17  | ConvertToUsercall            | —                                     | `actions/function_signature.py`                                 | P4    |
+| 18  | AddRemoveReturn              | —                                     | `actions/function_signature.py`                                 | P4    |
+| 19  | RemoveArgument               | —                                     | `actions/function_signature.py`                                 | P4    |
+| 20  | CreateNewField               | `Ctrl+F`                              | `actions/struct_creation.py`                                    | P4    |
+| 21  | CreateVtable                 | `V`                                   | `actions/virtual_table.py`                                      | P4    |
+| 22  | GetStructureBySize           | —                                     | `actions/structs_by_size.py`                                    | P4    |
+| 23  | SelectContainingStructure    | —                                     | `ctree/negative_offsets.py` + `actions/containing_structure.py` | P5    |
+| 24  | ResetContainingStructure     | —                                     | `ctree/negative_offsets.py` + `actions/containing_structure.py` | P5    |
+| 25  | FindFieldXrefs               | `Ctrl+X`                              | `actions/struct_xref.py`                                        | P4    |
+| 26  | SwapThenElse                 | `Shift+Alt+S`                         | `ctree/swap_if.py` + `actions/swap_if_action.py`                | P5    |
+| 27  | GuessAllocation              | —                                     | `actions/guess_allocation.py`                                   | P4    |
+
 
 ### 6.2 4 event handlers
 
-| # | Class | Event | New file | Phase |
-|---|---|---|---|---|
-| 28 | MemberDoubleClick | `hxe_double_click` | `actions/hx_events.py` | P4 |
-| 29 | PotentialNegativeCollector | `hxe_maturity/CMAT_BUILT` | `actions/hx_events.py` | P4 |
-| 30 | StructXrefCollector | `hxe_maturity/CMAT_FINAL` | `actions/hx_events.py` | P4 |
-| 31 | SilentIfSwapper | `hxe_maturity/CMAT_TRANS1+2` | `actions/hx_events.py` | P4 |
+
+| #   | Class                      | Event                        | New file               | Phase |
+| --- | -------------------------- | ---------------------------- | ---------------------- | ----- |
+| 28  | MemberDoubleClick          | `hxe_double_click`           | `actions/hx_events.py` | P4    |
+| 29  | PotentialNegativeCollector | `hxe_maturity/CMAT_BUILT`    | `actions/hx_events.py` | P4    |
+| 30  | StructXrefCollector        | `hxe_maturity/CMAT_FINAL`    | `actions/hx_events.py` | P4    |
+| 31  | SilentIfSwapper            | `hxe_maturity/CMAT_TRANS1+2` | `actions/hx_events.py` | P4    |
+
 
 **Total: 31 features** (27 actions + 4 event handlers). Feature parity is a hard requirement.
 
 ### 6.3 Naming collision fix
 
 The original has two classes named `VirtualTable` with different semantics:
+
 - `core/temporary_structure.VirtualTable` — a vtable **discovered** during scanning (working copy)
 - `core/classes.VirtualTable` — a vtable **registered** in Local Types (registered view)
 
 The rewrite renames them:
+
 - `domain/recon/discovered_vtable.py` → `DiscoveredVTable`
 - `domain/browser/registered_vtable.py` → `RegisteredVTable`
 
@@ -358,21 +376,24 @@ The rewrite renames them:
 
 ## 7. Implementation Phases
 
-| Phase | Deliverable | Test gate |
-|---|---|---|
-| **P0 — Foundation** | `pure/` module (4 files + tests) | `pytest tests/pure/` 100% pass |
-| **P1 — Infrastructure** | `infra/`, `session.py`, `settings.py`, `plugin.py`, `__main__.py` | IDA loads empty plugin, `pytest tests/infra/` pass |
-| **P2 — Core domain (no Qt)** | `domain/types/`, `domain/scanner/`, `domain/recon/` (except Qt model), `domain/xrefs/`, `domain/templated/`, `domain/til/`, `domain/graph/` | `pytest tests/domain/` ≥85% coverage on most modules |
-| **P3 — Browser & UI** | `domain/browser/`, `ui/`, `domain/recon/structure_model.py` (Qt) | Visual smoke test in IDA + `pytest` with `QT_QPA_PLATFORM=offscreen` |
-| **P4 — Actions & wiring** | `domain/actions/` (registry, hx_callback, hx_events, 27 actions) | All 31 features register & appear in correct widget |
-| **P5 — Ctree manipulation** | `domain/ctree/recast.py`, `rename.py`, `swap_if.py`, `negative_offsets.py`, plus 6 action files | All 31 features work in manual smoke test |
-| **P6 — Polish & bugfixes** | Type hints, mypy strict, ruff clean, CHANGELOG, migration doc | `mypy --strict` pass, `ruff check` pass, `pytest --cov-fail-under=80` pass |
+
+| Phase                          | Deliverable                                                                                                                                 | Test gate                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **P0 — Foundation**            | `pure/` module (4 files + tests)                                                                                                            | `pytest tests/pure/` 100% pass                                             |
+| **P1 — Infrastructure**        | `infra/`, `session.py`, `settings.py`, `plugin.py`, `__main__.py`                                                                           | IDA loads empty plugin, `pytest tests/infra/` pass                         |
+| **P2 — Core domain (no Qt)**   | `domain/types/`, `domain/scanner/`, `domain/recon/` (except Qt model), `domain/xrefs/`, `domain/templated/`, `domain/til/`, `domain/graph/` | `pytest tests/domain/` ≥85% coverage on most modules                       |
+| **P3 — Browser &amp; UI**      | `domain/browser/`, `ui/`, `domain/recon/structure_model.py` (Qt)                                                                            | Visual smoke test in IDA + `pytest` with `QT_QPA_PLATFORM=offscreen`       |
+| **P4 — Actions &amp; wiring**  | `domain/actions/` (registry, hx_callback, hx_events, 27 actions)                                                                            | All 31 features register &amp; appear in correct widget                    |
+| **P5 — Ctree manipulation**    | `domain/ctree/recast.py`, `rename.py`, `swap_if.py`, `negative_offsets.py`, plus 6 action files                                             | All 31 features work in manual smoke test                                  |
+| **P6 — Polish &amp; bugfixes** | Type hints, mypy strict, ruff clean, CHANGELOG, migration doc                                                                               | `mypy --strict` pass, `ruff check` pass, `pytest --cov-fail-under=80` pass |
+
 
 **Estimated effort:** 23–25 working days for a developer familiar with both IDA API and Qt. 30–50% additional budget if Hex-Rays SDK or PySide6 is new to the implementer.
 
 ### 7.1 MVP definition
 
-After P0 + P1 + P2 + P3-lite (~2 weeks of focused work), the deliverable is:
+After P0 + P1 + P2 + minimal P3 (just `ui/chooser.py` + `domain/recon/structure_model.py` Qt model, deferred full `widgets/structure_builder.py` to P3-final) — approximately 2 weeks of focused work — the deliverable is:
+
 - IDA 9.x loads the plugin via HCLI without errors
 - Structure reconstruction works (shallow scan + structure builder)
 - Templated types view loads
@@ -385,38 +406,42 @@ After P0 + P1 + P2 + P3-lite (~2 weeks of focused work), the deliverable is:
 
 14 known bugs from the original codebase, all to be fixed:
 
-| # | Bug | File in original | Fix in new code | Phase |
-|---|---|---|---|---|
-| B1 | `FormToPyQtWidget` used when PySide6 imports | `forms.py:36, 330` | `FormToPySideWidget` | P3 |
-| B2 | `QRegExp.indexIn` (Qt4/Qt5 API removed in Qt6) | `classes.py:354, 616` | `re.search` | P3 |
-| B3 | `setFilterRegExp` (Qt5 API renamed in Qt6) | `classes.py:602, 605` | `setFilterRegularExpression` | P3 |
-| B4 | `sys.platform == "linux2"` (Py2-only, dead in Py3) | `type_library.py:16` | `sys.platform == "linux"` | P2 |
-| B5 | `logger.warn(...)` (deprecated Py3.7+) | `structure_graph.py:78`, others | `logger.warning` | P2 + P6 |
-| B6 | `visited_downward/upward` as `list` (O(n²)) | `structure_graph.py:48-49` | `set` | P2 |
-| B7 | `idaapi.remove_pointer` deprecated | `struct_xref_representation.py:44` | `tinfo.remove_ptr_or_array()` | P4 |
-| B8 | `hx_view.refresh_ctext()` removed | `swap_if.py:84` | `hx_view.refresh_view(True)` | P5 |
-| B9 | `"Recast Return to ".format(...)` missing placeholder | `recasts.py:149` | `"Recast Return to {}".format(...)` | P5 |
-| B10 | Ctrl+N hotkey conflict | `renames.py:35, 164` | `RenameMemberFromFunctionName` → `Ctrl+Alt+N` | P5 |
-| B11 | Global mutable state (4 locations) | `cache.py`, `variable_scanner.py`, `classes.py`, `temporary_structure.py` | `Session` + DI | P1–P3 |
-| B12 | `XrefStorage` uses `idc.create_array` (legacy API) | `struct_xrefs.py` | Netnode storage with auto-migration | P2 |
-| B13 | `class Foo(object):` Py2-style inheritance (10 occurrences) | Multiple | Plain `class Foo:` | P6 |
-| B14 | Bare `print()` debug statements | Multiple files | `logger.debug()` via `infra/logging.py` | P6 |
+
+| #   | Bug                                                         | File in original                                                          | Fix in new code                               | Phase   |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------- | ------- |
+| B1  | `FormToPyQtWidget` used when PySide6 imports                | `forms.py:36, 330`                                                        | `FormToPySideWidget`                          | P3      |
+| B2  | `QRegExp.indexIn` (Qt4/Qt5 API removed in Qt6)              | `classes.py:354, 616`                                                     | `re.search`                                   | P3      |
+| B3  | `setFilterRegExp` (Qt5 API renamed in Qt6)                  | `classes.py:602, 605`                                                     | `setFilterRegularExpression`                  | P3      |
+| B4  | `sys.platform == "linux2"` (Py2-only, dead in Py3)          | `type_library.py:16`                                                      | `sys.platform == "linux"`                     | P2      |
+| B5  | `logger.warn(...)` (deprecated Py3.7+)                      | `structure_graph.py:78`, others                                           | `logger.warning`                              | P2 + P6 |
+| B6  | `visited_downward/upward` as `list` (O(n²))                 | `structure_graph.py:48-49`                                                | `set`                                         | P2      |
+| B7  | `idaapi.remove_pointer` deprecated                          | `struct_xref_representation.py:44`                                        | `tinfo.remove_ptr_or_array()`                 | P4      |
+| B8  | `hx_view.refresh_ctext()` removed                           | `swap_if.py:84`                                                           | `hx_view.refresh_view(True)`                  | P5      |
+| B9  | `"Recast Return to ".format(...)` missing placeholder       | `recasts.py:149`                                                          | `"Recast Return to {}".format(...)`           | P5      |
+| B10 | Ctrl+N hotkey conflict                                      | `renames.py:35, 164`                                                      | `RenameMemberFromFunctionName` → `Ctrl+Alt+N` | P5      |
+| B11 | Global mutable state (4 locations)                          | `cache.py`, `variable_scanner.py`, `classes.py`, `temporary_structure.py` | `Session` + DI                                | P1–P3   |
+| B12 | `XrefStorage` uses `idc.create_array` (legacy API)          | `struct_xrefs.py`                                                         | Netnode storage with auto-migration           | P2      |
+| B13 | `class Foo(object):` Py2-style inheritance (10 occurrences) | Multiple                                                                  | Plain `class Foo:`                            | P6      |
+| B14 | Bare `print()` debug statements                             | Multiple files                                                            | `logger.debug()` via `infra/logging.py`       | P6      |
+
 
 ---
 
 ## 9. Test Strategy
 
-| Layer | Test approach | Tool | Target coverage |
-|---|---|---|---|
-| `pure/` | Unit test, no IDA | pytest | 100% |
-| `infra/` | Unit + mock IDA | pytest + `tools/mock_ida.py` | 90% |
-| `domain/types/` | Unit + mock IDA | pytest | 85% |
-| `domain/scanner/` | Unit with cfunc mock | pytest | 70% |
-| `domain/recon/` | Unit + Qt offscreen | pytest + `QT_QPA_PLATFORM=offscreen` | 75% |
-| `domain/browser/` | Unit + Qt offscreen | pytest | 80% |
-| `domain/ctree/` | Unit with cfunc mock | pytest | 60% |
-| `domain/actions/` | Manual smoke in IDA | manual | 50% |
-| `ui/` | Widget test offscreen | pytest | 40% |
+
+| Layer             | Test approach         | Tool                                 | Target coverage |
+| ----------------- | --------------------- | ------------------------------------ | --------------- |
+| `pure/`           | Unit test, no IDA     | pytest                               | 100%            |
+| `infra/`          | Unit + mock IDA       | pytest + `tools/mock_ida.py`         | 90%             |
+| `domain/types/`   | Unit + mock IDA       | pytest                               | 85%             |
+| `domain/scanner/` | Unit with cfunc mock  | pytest                               | 70%             |
+| `domain/recon/`   | Unit + Qt offscreen   | pytest + `QT_QPA_PLATFORM=offscreen` | 75%             |
+| `domain/browser/` | Unit + Qt offscreen   | pytest                               | 80%             |
+| `domain/ctree/`   | Unit with cfunc mock  | pytest                               | 60%             |
+| `domain/actions/` | Manual smoke in IDA   | manual                               | 50%             |
+| `ui/`             | Widget test offscreen | pytest                               | 40%             |
+
 
 **Global gate:** `pytest --cov-fail-under=80` enforced in CI.
 
@@ -426,40 +451,44 @@ After P0 + P1 + P2 + P3-lite (~2 weeks of focused work), the deliverable is:
 
 ## 10. Risk Register
 
-| ID | Risk | Probability | Impact | Mitigation |
-|---|---|---|---|---|
-| R1 | IDA 9.0/9.1/9.2 API differences | Medium | Medium | Manual smoke test on all 3 versions; document workarounds |
-| R2 | `ida_settings` package maturity | Medium | Medium | Wrapper interface → easy to swap implementation |
-| R3 | ctree scan behavior changes between IDA versions | High | High | Visual regression test on a curated sample binary |
-| R4 | 27 features × manual test = time sink | High | Medium | Sample binary covering all 27 cases; automate as much as possible |
-| R5 | Existing user resistance to hotkey change | Low | Low | CHANGELOG clearly states `Ctrl+N` → `Ctrl+Alt+N`; `Ctrl+Alt+N` is adjacent |
-| R6 | XrefStorage data migration loses data | Medium | High | Auto-migrate; backup before deleting old array |
-| R7 | Build script error → HCLI doesn't load | Low | High | Test `hcli plugin lint` after build; verify `entryPoint` path |
-| R8 | `mock_ida.py` insufficient for some tests | High | Medium | Per-test functional mocks; accept some tests need real IDA |
-| R9 | Effort underestimation (real 35–40 days vs 23–25) | Medium | Medium | Phase gates allow stopping/adjusting; MVP at week 2 |
-| R10 | No IDA 9.x available to the implementer | Unknown | High | Confirm early; use IDA trial/evaluation if needed |
+
+| ID  | Risk                                              | Probability | Impact | Mitigation                                                                 |
+| --- | ------------------------------------------------- | ----------- | ------ | -------------------------------------------------------------------------- |
+| R1  | IDA 9.0/9.1/9.2 API differences                   | Medium      | Medium | Manual smoke test on all 3 versions; document workarounds                  |
+| R2  | `ida_settings` package maturity                   | Medium      | Medium | Wrapper interface → easy to swap implementation                            |
+| R3  | ctree scan behavior changes between IDA versions  | High        | High   | Visual regression test on a curated sample binary                          |
+| R4  | 27 features × manual test = time sink             | High        | Medium | Sample binary covering all 27 cases; automate as much as possible          |
+| R5  | Existing user resistance to hotkey change         | Low         | Low    | CHANGELOG clearly states `Ctrl+N` → `Ctrl+Alt+N`; `Ctrl+Alt+N` is adjacent |
+| R6  | XrefStorage data migration loses data             | Medium      | High   | Auto-migrate; backup before deleting old array                             |
+| R7  | Build script error → HCLI doesn't load            | Low         | High   | Test `hcli plugin lint` after build; verify `entryPoint` path              |
+| R8  | `mock_ida.py` insufficient for some tests         | High        | Medium | Per-test functional mocks; accept some tests need real IDA                 |
+| R9  | Effort underestimation (real 35–40 days vs 23–25) | Medium      | Medium | Phase gates allow stopping/adjusting; MVP at week 2                        |
+| R10 | No IDA 9.x available to the implementer           | Unknown     | High   | Confirm early; use IDA trial/evaluation if needed                          |
+
 
 ---
 
 ## 11. Decision Log
 
-| # | Decision | Rationale |
-|---|---|---|
-| D1 | Rewrite toàn diện (not just repackage) | User selected "Rewrite toàn diện" |
-| D2 | IDA 9.x only | User selected "IDA 9.x only (khuyến nghị)" |
-| D3 | 100% feature parity | User selected "Tất cả tính năng (parity)" |
-| D4 | Unit tests với mock | User selected "Unit tests với mock" |
-| D5 | src/ + pyproject + dist/ layout | User selected this layout |
-| D6 | Package name `hexrays_pytools` (snake_case) | PEP 8 compliance; display name in JSON stays "HexRaysPyTools" |
-| D7 | Source distribution (no PyPI) | Simpler for v2.0.0; PyPI possible in v2.1+ |
-| D8 | idaVersions `["9.0", "9.1", "9.2"]` | Cover entire current 9.x range |
-| D9 | Hotkey `Ctrl+N` → `Ctrl+Alt+N` for `RenameMemberFromFunctionName` | Fix B10 conflict; keep `Ctrl+N` for the more-used `RenameOther` |
-| D10 | Auto-migrate XrefStorage from array to netnode | Preserve existing user data |
-| D11 | 80% strict coverage gate | Enforce quality in CI |
-| D12 | `ida_settings` stdlib (HCLI package) | Official HCLI mechanism |
-| D13 | pytest + mock for UI | CI-friendly; manual smoke in real IDA |
-| D14 | 1 action = 1 file (16 files for 27 actions) | Per-feature isolation, easy review |
-| D15 | Spec doc location: `docs/superpowers/specs/` | Per brainstorming skill default |
+
+| #   | Decision                                                          | Rationale                                                       |
+| --- | ----------------------------------------------------------------- | --------------------------------------------------------------- |
+| D1  | Rewrite toàn diện (not just repackage)                            | User selected "Rewrite toàn diện"                               |
+| D2  | IDA 9.x only                                                      | User selected "IDA 9.x only (khuyến nghị)"                      |
+| D3  | 100% feature parity                                               | User selected "Tất cả tính năng (parity)"                       |
+| D4  | Unit tests với mock                                               | User selected "Unit tests với mock"                             |
+| D5  | src/ + pyproject + dist/ layout                                   | User selected this layout                                       |
+| D6  | Package name `hexrays_pytools` (snake_case); HCLI plugin `name` is `hexrays_pytools`; IDA plugin display name (`wanted_name` in `plugin.py`) is `HexRaysPyTools` (CamelCase preserved) | PEP 8 compliance for Python identifier; preserve brand name in IDA's plugin manager UI |
+| D7  | Source distribution (no PyPI)                                     | Simpler for v2.0.0; PyPI possible in v2.1+                      |
+| D8  | idaVersions `["9.0", "9.1", "9.2"]`                               | Cover entire current 9.x range                                  |
+| D9  | Hotkey `Ctrl+N` → `Ctrl+Alt+N` for `RenameMemberFromFunctionName` | Fix B10 conflict; keep `Ctrl+N` for the more-used `RenameOther` |
+| D10 | Auto-migrate XrefStorage from array to netnode                    | Preserve existing user data                                     |
+| D11 | 80% strict coverage gate                                          | Enforce quality in CI                                           |
+| D12 | `ida_settings` stdlib (HCLI package)                              | Official HCLI mechanism                                         |
+| D13 | pytest + mock for UI                                              | CI-friendly; manual smoke in real IDA                           |
+| D14 | 1 action = 1 file (16 files for 27 actions)                       | Per-feature isolation, easy review                              |
+| D15 | Spec doc location: `docs/superpowers/specs/`                      | Per brainstorming skill default                                 |
+
 
 ---
 
@@ -472,12 +501,13 @@ Items that should be confirmed before starting Phase 0:
 3. **Repository URL** — where will the rewrite live? (Existing GitHub repo? New fork?)
 4. **Sample test binary** — do we have a small binary (~5 MB) that exercises all 27 features? Needed for P4–P5 manual testing.
 5. **IDA 9.x availability** — does the implementer have access to a real IDA 9.x installation? Critical for smoke tests.
-6. **`is_legal_type` heuristic** — the agent's analysis noted a comment "after 9.0 nearly always returns False". This is a known broken heuristic that may need re-implementation. Confirm or defer?
+6. `**is_legal_type` heuristic** — the agent's analysis noted a comment "after 9.0 nearly always returns False". This is a known broken heuristic that may need re-implementation. Confirm or defer?
 
 ---
 
 ## 13. References
 
-- HCLI plugin packaging spec: https://hcli.docs.hex-rays.com/reference/plugin-packaging-and-format/
+- HCLI plugin packaging spec: [https://hcli.docs.hex-rays.com/reference/plugin-packaging-and-format/](https://hcli.docs.hex-rays.com/reference/plugin-packaging-and-format/)
 - Original plugin source: `refs/HexRaysPyTools/`
 - 5-layer architecture rationale: see Section 3.1
+
