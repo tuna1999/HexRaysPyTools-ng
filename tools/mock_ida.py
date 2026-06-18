@@ -141,7 +141,14 @@ def install() -> None:
 
 
 def reset() -> None:
-    """Reset call history on all mock modules (between tests)."""
+    """Reset mock state on all mock modules (between tests).
+
+    Clears both call history AND configured return_value/side_effect so tests
+    are fully isolated. Without ``return_value=True``, a test that sets
+    ``idaapi.netnode.return_value = 42`` leaks the int into later tests, which
+    then fail with ``AttributeError: 'int' object has no attribute 'supstr'``.
+    ``MagicMock.reset_mock()`` only clears call history by default.
+    """
     for mod_name in MOCK_MODULES:
         mod = sys.modules.get(mod_name)
         if mod is None:
@@ -151,4 +158,4 @@ def reset() -> None:
                 continue
             attr = getattr(mod, attr_name, None)
             if isinstance(attr, MagicMock):
-                attr.reset_mock()
+                attr.reset_mock(return_value=True, side_effect=True)
