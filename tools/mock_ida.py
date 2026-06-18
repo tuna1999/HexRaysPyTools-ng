@@ -132,6 +132,9 @@ class _MockIdaModule:
     class action_t:  # noqa: N801 - keep IDA SWIG casing
         pass
 
+    class ctree_parentee_t:  # noqa: N801 - keep IDA SWIG casing
+        pass
+
     def __getattr__(self, name: str) -> Any:
         # Names starting with "_" are real attributes (Python internals, the
         # constants above). Anything else is a mock. Cache in __dict__ so
