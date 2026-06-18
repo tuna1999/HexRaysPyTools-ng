@@ -1,0 +1,10 @@
+["std::vector<T>"]
+base_name = "std_vector_{1}"
+types = ["T"]
+struct = """
+struct std_vector_{1} {{
+    {0} *_Myfirst;
+    {0} *_Mylast;
+    {0} *_Myend;
+}};
+"""
