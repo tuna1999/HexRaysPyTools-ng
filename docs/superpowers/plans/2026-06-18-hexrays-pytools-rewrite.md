@@ -975,24 +975,27 @@ def test_parse_invalid_toml_returns_err() -> None:
 
 
 def test_render_single_param_template() -> None:
-    """A template with 1 type param renders correctly with one arg."""
+    """A template with 1 type param renders correctly with 2 args (actual, pretty)."""
     result = parse_toml_template(FIXTURE.read_text())
     templates = result.unwrap()
-    rendered = render_template(templates["std::vector<T>"], ["int *"])
+    # render_template expects 2*N args: [actual_0, pretty_0, actual_1, pretty_1, ...]
+    # For N=1 (std::vector<T>), need 2 args: actual="int *", pretty="pInt"
+    rendered = render_template(templates["std::vector<T>"], ["int *", "pInt"])
     assert rendered.is_ok
     type_name, decl = rendered.unwrap()
-    assert type_name == "std_vector_pInt"  # pInt = pretty int*
+    assert type_name == "std_vector_pInt"
     assert "int_PTR *_Myfirst" in decl
 
 
 def test_render_two_param_template() -> None:
-    """A template with 2 type params renders correctly with two args."""
+    """A template with 2 type params renders correctly with 4 args (actual, pretty, actual, pretty)."""
     result = parse_toml_template(FIXTURE.read_text())
     templates = result.unwrap()
-    rendered = render_template(templates["std::map<K,V>"], ["int", "char *"])
+    # For N=2 (std::map<K,V>), need 4 args: [K_actual, K_pretty, V_actual, V_pretty]
+    rendered = render_template(templates["std::map<K,V>"], ["int", "pInt", "char *", "pChar"])
     assert rendered.is_ok
     type_name, decl = rendered.unwrap()
-    assert type_name == "std_map_int_pChar"
+    assert type_name == "std_map_pInt_pChar"
     assert "int first" in decl
     assert "char_PTR second" in decl
 
@@ -1001,15 +1004,16 @@ def test_render_wrong_arg_count_returns_err() -> None:
     """Wrong number of args returns an error."""
     result = parse_toml_template(FIXTURE.read_text())
     templates = result.unwrap()
-    rendered = render_template(templates["std::vector<T>"], ["int *", "extra"])
+    # For N=1, need 2 args. Pass 3 (wrong).
+    rendered = render_template(templates["std::vector<T>"], ["int *", "pInt", "extra"])
     assert not rendered.is_ok
 
 
 def test_render_unknown_template_returns_err() -> None:
-    """Render with an unknown template returns an error."""
+    """Render with 0 args (need 2) returns an error."""
     result = parse_toml_template(FIXTURE.read_text())
     templates = result.unwrap()
-    rendered = render_template(templates["std::vector<T>"], [])  # 0 args, need 1
+    rendered = render_template(templates["std::vector<T>"], [])  # 0 args, need 2
     assert not rendered.is_ok
 ```
 
