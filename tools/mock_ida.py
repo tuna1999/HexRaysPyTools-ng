@@ -118,9 +118,17 @@ class _MockIdaModule:
     INF_LONG_DN: int = 0x00000002
 
     def __getattr__(self, name: str) -> Any:
+        # Names starting with "_" are real attributes (Python internals, the
+        # constants above). Anything else is a mock. Cache in __dict__ so
+        # repeated access returns the SAME MagicMock instance — this is what
+        # tests rely on (e.g. `idaapi.is_code.return_value = True` followed by
+        # a later `idaapi.is_code(...)` call must see the configured value), and
+        # what `reset()` needs (it iterates attributes expecting stability).
         if name.startswith("_"):
             raise AttributeError(name)
-        return MagicMock(name=f"ida.{self.__class__.__name__}.{name}")
+        mock = MagicMock(name=f"ida.{self.__class__.__name__}.{name}")
+        self.__dict__[name] = mock
+        return mock
 
 
 def install() -> None:
