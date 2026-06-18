@@ -30,6 +30,34 @@ def test_registry_build_actions_returns_27() -> None:
     assert len(actions) == 27
 
 
+def test_registry_build_actions_real_path_returns_27() -> None:
+    """Real lazy-import path now works (Task 4.5 shipped the action modules).
+
+    Task 4.2 deferred this to Task 4.5: the 11 action modules did not exist,
+    so the real `_build_actions` could not be exercised. Now they exist and
+    the lazy imports resolve. This test exercises the real code path and
+    confirms all 27 classes instantiate.
+    """
+    r = ActionRegistry()
+    actions = r._build_actions()
+    assert len(actions) == 27
+    # Verify the spec order (first and last entries)
+    assert type(actions[0]).__name__ == "ShowGraph"
+    assert type(actions[-1]).__name__ == "ResetContainingStructure"
+
+
+def test_registry_build_actions_b10_fix_hotkey() -> None:
+    """B10 fix holds in the real registry build: RenameMemberFromFunctionName
+    uses Ctrl+Alt+N (not Ctrl+N, which collides with RenameOther)."""
+    r = ActionRegistry()
+    actions = r._build_actions()
+    by_name = {type(a).__name__: a for a in actions}
+    assert by_name["RenameMemberFromFunctionName"].hotkey == "Ctrl+Alt+N"
+    assert by_name["RenameOther"].hotkey == "Ctrl+N"
+    # The two must differ (B10 collision fix)
+    assert by_name["RenameMemberFromFunctionName"].hotkey != by_name["RenameOther"].hotkey
+
+
 def test_registry_register_one_appends() -> None:
     """_register_one adds to actions and calls idaapi.register_action."""
     r = ActionRegistry()

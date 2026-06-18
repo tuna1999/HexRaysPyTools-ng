@@ -71,26 +71,26 @@ class ActionRegistry:
 
     def _build_actions(self) -> list:  # type: ignore[type-arg]
         """Lazy-import all action classes. Returns instances."""
-        # Lazy imports break circular dependencies. The referenced modules are
-        # created in Task 4.5; until then mypy reports [import-untyped]. The
-        # ignores become removable once those modules ship a py.typed marker.
-        from .containing_structure import (  # type: ignore[import-untyped]
+        # Lazy imports break circular dependencies. Task 4.5 created all the
+        # referenced action modules; the earlier `# type: ignore[import-untyped]`
+        # comments are now removed (the modules exist).
+        from .containing_structure import (
             ResetContainingStructure,
             SelectContainingStructure,
         )
-        from .form_requests import (  # type: ignore[import-untyped]
+        from .form_requests import (
             ShowClasses,
             ShowGraph,
             ShowStructureBuilder,
         )
-        from .function_signature import (  # type: ignore[import-untyped]
+        from .function_signature import (
             AddRemoveReturn,
             ConvertToUsercall,
             RemoveArgument,
         )
-        from .guess_allocation import GuessAllocation  # type: ignore[import-untyped]
-        from .recast_action import RecastItemLeft, RecastItemRight  # type: ignore[import-untyped]
-        from .rename_action import (  # type: ignore[import-untyped]
+        from .guess_allocation import GuessAllocation
+        from .recast_action import RecastItemLeft, RecastItemRight
+        from .rename_action import (
             PropagateName,
             RenameInside,
             RenameMemberFromFunctionName,
@@ -98,17 +98,17 @@ class ActionRegistry:
             RenameOutside,
             RenameUsingAssert,
         )
-        from .scanners import (  # type: ignore[import-untyped]
+        from .scanners import (
             DeepScanFunctions,
             DeepScanReturn,
             DeepScanVariable,
             RecognizeShape,
             ShallowScanVariable,
         )
-        from .struct_creation import CreateNewField, CreateVtable  # type: ignore[import-untyped]
-        from .struct_xref import FindFieldXrefs  # type: ignore[import-untyped]
-        from .structs_by_size import GetStructureBySize  # type: ignore[import-untyped]
-        from .swap_if_action import SwapThenElse  # type: ignore[import-untyped]
+        from .struct_creation import CreateNewField, CreateVtable
+        from .struct_xref import FindFieldXrefs
+        from .structs_by_size import GetStructureBySize
+        from .swap_if_action import SwapThenElse
         # All 27 classes in spec order
         all_classes = [
             ShowGraph, ShowClasses, ShowStructureBuilder,
