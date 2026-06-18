@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .recon.workspace import ReconWorkspace
     from .templated.templated_types import TemplatedTypes  # type: ignore[import-untyped]
-    from .xrefs.xref_storage import XrefStorage  # type: ignore[import-untyped]
+    from .xrefs.xref_storage import XrefStorage
 
 logger = logging.getLogger(__name__)
 
