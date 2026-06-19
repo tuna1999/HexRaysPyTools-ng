@@ -6,8 +6,12 @@ unavoidable.
 """
 from __future__ import annotations
 
+import logging
+
 import idaapi  # type: ignore[import-not-found]
 import idc  # type: ignore[import-not-found]
+
+logger = logging.getLogger(__name__)
 
 
 def get_ordinal(tinfo: idaapi.tinfo_t) -> int:
@@ -50,3 +54,30 @@ def change_member_name(struct_name: str, offset: int, name: str) -> bool:
     Mirrors the original `helper.change_member_name`.
     """
     return bool(idc.set_member_name(idc.get_struc_id(struct_name), offset, name))
+
+
+def is_legal_type(tinfo: idaapi.tinfo_t) -> bool:
+    """Return True if ``tinfo`` is a type the scanner engine can apply.
+
+    Mirrors the original ``core/helper.py:is_legal_type``. A tinfo is legal
+    unless it's an unknown type. Forward declarations of pointer targets are
+    legal as long as the target size is known (``!BADSIZE``) — the scanner
+    uses these to apply char/wide-char pointer types.
+
+    Note: the original ``clr_const()`` mutates the input in-place. The new
+    plugin ports the behaviour but logs a debug message instead of mutating
+    — mutating the caller's tinfo is a hidden side effect the rule book
+    (common/coding-style.md, "Immutability CRITICAL") forbids.
+    """
+    if tinfo is None:
+        return False
+    if tinfo.is_ptr() and tinfo.get_pointed_object().is_forward_decl():
+        is_bad_size = tinfo.get_pointed_object().get_size() == idaapi.BADSIZE
+        logger.debug(
+            "Type %s is forward declaration: %s", str(tinfo.dstr()), is_bad_size
+        )
+        return not is_bad_size
+    if tinfo.is_unknown():
+        logger.debug("Type %s is unknown", str(tinfo.dstr()))
+        return False
+    return True
