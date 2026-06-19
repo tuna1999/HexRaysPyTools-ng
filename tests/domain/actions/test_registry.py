@@ -101,3 +101,67 @@ def test_register_all_does_not_call_instances() -> None:
     # Neither instance had __call__ invoked
     instance1.assert_not_called()
     instance2.assert_not_called()
+
+
+def test_popup_actions_attached_to_populating_popup() -> None:
+    """Popup actions must be registered for hxe_populating_popup.
+
+    Regression guard for the "right-click menu is empty" bug: actions were
+    registered with IDA (so hotkeys worked) but never attached to the
+    pseudocode context menu. The fix wires each HexRaysPopupAction into the
+    HxCallbackManager under hxe_populating_popup; when Hex-Rays fires that
+    event on right-click, the handler calls attach_action_to_popup().
+    """
+    import idaapi
+
+    from hexrays_pytools.domain.actions.action import (
+        HexRaysPopupAction,
+        HexRaysPopupRequestHandler,
+    )
+    from hexrays_pytools.domain.actions.hx_callback import HxCallbackManager
+
+    class _PopupA(HexRaysPopupAction):
+        description = "A"
+
+        def activate(self, ctx):  # type: ignore[no-untyped-def]
+            pass
+
+        def check(self, hx_view):  # type: ignore[no-untyped-def]
+            return True
+
+    class _PlainA:
+        name = "plain"
+
+    # Registry with a real HxCallbackManager so the popup attach runs.
+    hx = HxCallbackManager()
+    r = ActionRegistry(hx_callbacks=hx)
+    r._register_one(_PopupA())
+    # The popup handler must have been registered for hxe_populating_popup.
+    popup_handlers = hx._handlers[int(idaapi.hxe_populating_popup)]
+    assert len(popup_handlers) == 1
+    assert isinstance(popup_handlers[0], HexRaysPopupRequestHandler)
+
+
+def test_popup_actions_not_attached_without_callback_manager() -> None:
+    """Without an HxCallbackManager, popup actions register but don't attach.
+
+    This guards backward compatibility (ActionRegistry works without callbacks)
+    and documents that the menu-attachment is opt-in via the constructor.
+    """
+    from hexrays_pytools.domain.actions.action import HexRaysPopupAction
+    from hexrays_pytools.domain.actions.hx_callback import HxCallbackManager
+
+    class _PopupB(HexRaysPopupAction):
+        description = "B"
+
+        def activate(self, ctx):  # type: ignore[no-untyped-def]
+            pass
+
+        def check(self, hx_view):  # type: ignore[no-untyped-def]
+            return True
+
+    r = ActionRegistry()  # no hx_callbacks
+    hx = HxCallbackManager()
+    # Even if an external manager exists, the registry won't have attached.
+    r._register_one(_PopupB())
+    assert hx._handlers == {} or len(hx._handlers) == 0

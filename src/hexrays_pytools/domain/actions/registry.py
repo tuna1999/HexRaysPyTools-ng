@@ -13,6 +13,7 @@ import idaapi  # type: ignore[import-not-found]
 if TYPE_CHECKING:
     from ..session import Session
     from .action import Action
+    from .hx_callback import HxCallbackManager
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,13 @@ ACTION_CLASSES: tuple = (  # type: ignore[type-arg]
 class ActionRegistry:
     """Centralized registry with explicit dependency injection."""
 
-    def __init__(self, session: Session | None = None) -> None:
+    def __init__(
+        self,
+        session: Session | None = None,
+        hx_callbacks: HxCallbackManager | None = None,
+    ) -> None:
         self._session = session
+        self._hx_callbacks = hx_callbacks
         self._actions: list = []  # type: ignore[type-arg]
 
     def register_all(self) -> None:
@@ -135,11 +141,20 @@ class ActionRegistry:
                 action.name, action.description, action, action.hotkey,
             )
         )
-        # Also attach popup actions (lazy import to avoid cycles)
-        from .action import HexRaysPopupAction
-        if isinstance(action, HexRaysPopupAction):
-            # hx_callback manager will attach this; here we just record
-            logger.debug("Popup action registered: %s", action.name)
+        # Attach popup actions to the Hex-Rays right-click menu. Each
+        # HexRaysPopupAction gets wrapped in a HexRaysPopupRequestHandler
+        # registered for hxe_populating_popup; when the user right-clicks in
+        # the pseudocode view, Hex-Rays fires that event and the handler calls
+        # idaapi.attach_action_to_popup() — that is what makes the action show
+        # up in the context menu. Without this, the action is registered
+        # (hotkey works) but never appears in the menu.
+        from .action import HexRaysPopupAction, HexRaysPopupRequestHandler
+        if isinstance(action, HexRaysPopupAction) and self._hx_callbacks is not None:
+            self._hx_callbacks.register(
+                int(idaapi.hxe_populating_popup),
+                HexRaysPopupRequestHandler(action),
+            )
+            logger.debug("Popup action attached: %s", action.name)
 
     def unregister_all(self) -> None:
         for action in self._actions:

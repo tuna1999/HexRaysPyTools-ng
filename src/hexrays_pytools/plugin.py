@@ -66,11 +66,8 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
         self.session = Session()
         self.session.open()
 
-        # Register the 27 actions with IDA
-        self.actions = ActionRegistry(self.session)
-        self.actions.register_all()
-
-        # Install the 4 hx event handlers
+        # Install the hx event dispatcher first — ActionRegistry needs it to
+        # attach popup actions to hxe_populating_popup.
         self.hx_callbacks = HxCallbackManager()
         self.hx_callbacks.install()
         self.hx_callbacks.register(
@@ -89,6 +86,11 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
             int(idaapi.hxe_maturity),
             SilentIfSwapper(self.session),
         )
+
+        # Register the 27 actions with IDA. Popup actions are auto-attached
+        # to the right-click menu via the hx_callbacks dispatcher.
+        self.actions = ActionRegistry(self.session, self.hx_callbacks)
+        self.actions.register_all()
 
         logger.info("HexRaysPyTools plugin initialized")
         return int(idaapi.PLUGIN_KEEP)
