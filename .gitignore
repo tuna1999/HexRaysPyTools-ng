@@ -23,3 +23,4 @@ htmlcov/
 
 # Plugin runtime
 $HXP_*
+test_target.exe.asm
