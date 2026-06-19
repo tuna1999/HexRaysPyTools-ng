@@ -53,6 +53,11 @@ omit = [
     "*/domain/ctree/rename.py",
     "*/domain/ctree/swap_if.py",
     "*/domain/ctree/negative_offsets.py",
+    # Action activate() paths operate on live cfunc/UDT/chooser and cannot
+    # be exercised with mocks — verified in real IDA via idat headless.
+    "*/domain/actions/struct_creation.py",
+    "*/domain/actions/struct_xref.py",
+    "*/domain/actions/structs_by_size.py",
 ]
 
 [tool.ruff]
