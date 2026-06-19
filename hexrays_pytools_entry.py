@@ -1,7 +1,8 @@
 """HCLI entry for HexRaysPyTools.
 
 Referenced by `ida-plugin.json`'s `entryPoint` (relative to the plugin root).
-IDA/HCLI expects `PLUGIN_ENTRY` (a `plugin_t` subclass) in this file.
+IDA/HCLI expects `PLUGIN_ENTRY` (a callable returning a `plugin_t` instance)
+in this file.
 
 Dual-mode path resolution so the *same* file works in two layouts:
 

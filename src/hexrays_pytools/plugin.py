@@ -1,8 +1,22 @@
 """IDA plugin entry point.
 
 Defines `HexRaysPyToolsPlugin` (idaapi.plugin_t subclass) that manages the
-plugin lifecycle: init/run/term. All state lives in class attributes (per
-plugin instance, not module global).
+plugin lifecycle: init/run/term.
+
+IDA 9.x contract (confirmed against IDA 9.3 official examples
+`auto_instantiate_widget_plugin.py` and `py_mex1.py`, and the working
+`rikugan` plugin):
+
+  * `init`/`run`/`term` are **instance methods** (take ``self``). IDA's C++
+    dispatcher calls them through a SWIG virtual-method binding that expects
+    an instance descriptor; overriding them with ``@classmethod`` produces a
+    descriptor mismatch and a native crash at plugin discovery time.
+  * `init` may return ``None``/``PLUGIN_SKIP`` for a non-MULTI plugin, or a
+    ``plugmod_t`` instance for ``PLUGIN_MULTI``. We use the legacy non-MULTI
+    form (``flags = 0``) which matches `auto_instantiate_widget_plugin.py`.
+  * ``PLUGIN_ENTRY`` is a **function** returning a plugin instance.
+
+All mutable state lives on the instance, not module globals.
 """
 from __future__ import annotations
 
@@ -32,63 +46,69 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
     wanted_name: str = "HexRaysPyTools"
     wanted_hotkey: str = ""
 
-    # Per-instance state (not module-level globals)
-    session: Session | None = None
-    actions: ActionRegistry | None = None
-    hx_callbacks: HxCallbackManager | None = None
+    def __init__(self) -> None:
+        # Per-instance state (not module-level globals, not class attributes).
+        self.session: Session | None = None
+        self.actions: ActionRegistry | None = None
+        self.hx_callbacks: HxCallbackManager | None = None
 
-    @classmethod
-    def init(cls) -> int:
-        """Initialize plugin: open session, register actions and hx callbacks."""
+    def init(self) -> int:
+        """Initialize plugin: open session, register actions and hx callbacks.
+
+        Returns PLUGIN_KEEP on success, PLUGIN_SKIP if Hex-Rays SDK is missing.
+        """
         if not idaapi.init_hexrays_plugin():
             logger.error("Failed to initialize Hex-Rays SDK")
             return int(idaapi.PLUGIN_SKIP)
 
-        cls.session = Session()
-        cls.session.open()
+        self.session = Session()
+        self.session.open()
 
         # Register the 27 actions with IDA
-        cls.actions = ActionRegistry(cls.session)
-        cls.actions.register_all()
+        self.actions = ActionRegistry(self.session)
+        self.actions.register_all()
 
         # Install the 4 hx event handlers
-        cls.hx_callbacks = HxCallbackManager()
-        cls.hx_callbacks.install()
-        cls.hx_callbacks.register(
+        self.hx_callbacks = HxCallbackManager()
+        self.hx_callbacks.install()
+        self.hx_callbacks.register(
             int(idaapi.hxe_double_click),
-            MemberDoubleClick(cls.session),
+            MemberDoubleClick(self.session),
         )
-        cls.hx_callbacks.register(
+        self.hx_callbacks.register(
             int(idaapi.hxe_maturity),
-            PotentialNegativeCollector(cls.session),
+            PotentialNegativeCollector(self.session),
         )
-        cls.hx_callbacks.register(
+        self.hx_callbacks.register(
             int(idaapi.hxe_maturity),
-            StructXrefCollector(cls.session),
+            StructXrefCollector(self.session),
         )
-        cls.hx_callbacks.register(
+        self.hx_callbacks.register(
             int(idaapi.hxe_maturity),
-            SilentIfSwapper(cls.session),
+            SilentIfSwapper(self.session),
         )
 
         logger.info("HexRaysPyTools plugin initialized")
         return int(idaapi.PLUGIN_KEEP)
 
-    @classmethod
-    def run(cls, *args: object) -> None:
+    def run(self, arg: int) -> None:
         """Run the plugin (no-op — actions handle their own execution)."""
 
-    @classmethod
-    def term(cls) -> None:
+    def term(self) -> None:
         """Terminate plugin: unregister actions, close session."""
-        if cls.actions:
-            cls.actions.unregister_all()
-            cls.actions = None
-        if cls.hx_callbacks:
-            cls.hx_callbacks.detach_all()
-            cls.hx_callbacks = None
-        if cls.session:
-            cls.session.close()
-            cls.session = None
+        if self.actions is not None:
+            self.actions.unregister_all()
+            self.actions = None
+        if self.hx_callbacks is not None:
+            self.hx_callbacks.detach_all()
+            self.hx_callbacks = None
+        if self.session is not None:
+            self.session.close()
+            self.session = None
         idaapi.term_hexrays_plugin()
         logger.info("HexRaysPyTools plugin terminated")
+
+
+def PLUGIN_ENTRY() -> HexRaysPyToolsPlugin:  # noqa: N802 - IDA contract
+    """IDA entry point — returns a fresh plugin instance."""
+    return HexRaysPyToolsPlugin()
