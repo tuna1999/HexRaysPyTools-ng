@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .const import Consts
     from .recon.workspace import ReconWorkspace
     from .templated.templated_types import TemplatedTypes
     from .xrefs.xref_storage import XrefStorage
@@ -36,6 +37,9 @@ class Session:
     imported_ea: set[int] = field(default_factory=set)
     demangled_names: dict[str, set[int]] = field(default_factory=dict)
     touched_functions: set[int] = field(default_factory=set)
+
+    # tinfo singletons for the active IDB (replaces core/const.py module globals)
+    consts: Consts | None = None
 
     # Settings (loaded from HCLI ida-settings in open())
     log_level: int = logging.INFO
@@ -74,10 +78,14 @@ class Session:
             logger.debug("settings.py not yet available, using defaults")
 
     def _init_caches(self) -> None:
-        """Initialize IDA-derived caches (imported EAs, demangled names)."""
-        # Imported EAs and demangled names are populated in later phases;
-        # for now, just log.
-        logger.debug("Caches initialized (stubs)")
+        """Initialize IDA-derived caches (imported EAs, demangled names, consts)."""
+        # Build the tinfo singletons for this IDB. The scanner engine
+        # (Phase A.5+) depends on these; importing here is the natural
+        # place to wire the dependency.
+        from .const import init_consts
+
+        self.consts = init_consts()
+        logger.debug("Caches initialized (consts populated)")
 
     def _init_workspaces(self) -> None:
         """Lazy-init domain workspaces."""
