@@ -135,6 +135,41 @@ class _MockIdaModule:
     class ctree_parentee_t:  # noqa: N801 - keep IDA SWIG casing
         pass
 
+    class ctree_item_t:  # noqa: N801 - keep IDA SWIG casing
+        """Stand-in for ``idaapi.ctree_item_t``.
+
+        Production code does ``isinstance(arg, idaapi.ctree_item_t)`` to
+        dispatch between cexpr-shaped and item-shaped inputs in factory
+        functions (e.g. ``ScanObject.create``). A MagicMock base would
+        raise ``TypeError: isinstance() arg 2 must be a type`` — must be a
+        real class.
+
+        Attributes (``citype``, ``e``) are class-level defaults so tests
+        can use ``MagicMock(spec=idaapi.ctree_item_t)`` (which enforces
+        ``spec``-only attribute access) and still configure these three
+        fields without raising ``AttributeError``.
+        """
+        citype: int = 0  # one of idaapi.VDI_*
+        e: Any = None
+
+        def get_lvar(self) -> Any:
+            """Returns the local var attached to this item, or None."""
+            return None
+
+    class cexpr_t:  # noqa: N801 - keep IDA SWIG casing
+        """Stand-in for ``idaapi.cexpr_t``. Subclassed by visitors."""
+        op: int = 0
+
+    class carg_t:  # noqa: N801 - keep IDA SWIG casing
+        """Stand-in for ``idaapi.carg_t``."""
+        op: int = 0
+
+    class lvar_t:  # noqa: N801 - keep IDA SWIG casing
+        """Stand-in for ``idaapi.lvar_t``."""
+        name: str = ""
+        def type(self) -> Any: ...
+        cmt: str = ""
+
     # UI base types that production code subclasses (PluginForm for dock
     # forms, GraphViewer for graph widgets, Choose for list choosers). Same
     # rationale as plugin_t above: a MagicMock base would make
