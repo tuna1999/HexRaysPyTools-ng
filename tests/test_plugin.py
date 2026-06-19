@@ -85,3 +85,28 @@ def test_plugin_init_wires_registry_and_callbacks() -> None:
     assert plugin.session is None
     assert plugin.actions is None
     assert plugin.hx_callbacks is None
+
+
+def test_plugin_entry_resolves_class_in_synthetic_namespace() -> None:
+    """PLUGIN_ENTRY works even when IDA re-binds it into a synthetic namespace.
+
+    Regression guard for the IDA 9.x discovery crash: IDA's plugin loader
+    execs the entry file in a ``__plugins__<name>`` namespace and re-binds
+    ``PLUGIN_ENTRY`` into it, so ``HexRaysPyToolsPlugin`` is NOT in the
+    function's call-time globals. PLUGIN_ENTRY must resolve the class by
+    import at call time rather than relying on module globals.
+    """
+    import types
+
+    from hexrays_pytools.plugin import PLUGIN_ENTRY
+
+    # Simulate IDA's re-binding: create a copy of PLUGIN_ENTRY whose
+    # __globals__ is an empty synthetic namespace (no HexRaysPyToolsPlugin).
+    synthetic = types.FunctionType(
+        PLUGIN_ENTRY.__code__,
+        {"__name__": "__plugins__hexrays_pytools"},
+        PLUGIN_ENTRY.__name__,
+    )
+    # Must NOT raise NameError — and must return a real plugin instance.
+    instance = synthetic()
+    assert isinstance(instance, HexRaysPyToolsPlugin)

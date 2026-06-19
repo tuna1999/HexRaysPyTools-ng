@@ -11,10 +11,12 @@ IDA 9.x contract (confirmed against IDA 9.3 official examples
     dispatcher calls them through a SWIG virtual-method binding that expects
     an instance descriptor; overriding them with ``@classmethod`` produces a
     descriptor mismatch and a native crash at plugin discovery time.
-  * `init` may return ``None``/``PLUGIN_SKIP`` for a non-MULTI plugin, or a
-    ``plugmod_t`` instance for ``PLUGIN_MULTI``. We use the legacy non-MULTI
-    form (``flags = 0``) which matches `auto_instantiate_widget_plugin.py`.
   * ``PLUGIN_ENTRY`` is a **function** returning a plugin instance.
+  * ``PLUGIN_ENTRY`` must resolve ``HexRaysPyToolsPlugin`` by **import at call
+    time**, not via module globals: IDA's plugin loader execs the entry file
+    in a synthetic ``__plugins__<name>`` namespace and re-binds ``PLUGIN_ENTRY``
+    into it, so the class is absent from the function's call-time globals. A
+    bare ``return HexRaysPyToolsPlugin()`` raised ``NameError`` at discovery.
 
 All mutable state lives on the instance, not module globals.
 """
@@ -110,5 +112,14 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
 
 
 def PLUGIN_ENTRY() -> HexRaysPyToolsPlugin:  # noqa: N802 - IDA contract
-    """IDA entry point — returns a fresh plugin instance."""
+    """IDA entry point — returns a fresh plugin instance.
+
+    Note: IDA's plugin loader execs the entry file in a synthetic
+    ``__plugins__<name>`` namespace and re-binds this function into it, so
+    ``__globals__`` at call time is that synthetic namespace — not the module
+    where ``HexRaysPyToolsPlugin`` is defined. Resolve the class by import at
+    call time instead of relying on module globals.
+    """
+    from hexrays_pytools.plugin import HexRaysPyToolsPlugin
+
     return HexRaysPyToolsPlugin()
