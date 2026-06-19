@@ -1,112 +1,52 @@
-"""Rename actions (6 classes).
-
-B10 fix: RenameMemberFromFunctionName uses Ctrl+Alt+N (not Ctrl+N, which is
-already taken by RenameOther). See design spec §6.1 row 14.
-"""
+"""6 rename action wrappers."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ..ctree.rename import (
+    propagate_name,
+    rename_inside,
+    rename_member_from_function_name,
+    rename_other,
+    rename_outside,
+    rename_using_assert,
+)
 from .action import HexRaysPopupAction
 
 if TYPE_CHECKING:
     from ..session import Session
 
 
-class RenameOther(HexRaysPopupAction):
-    """Take the other name (from the paired xref) for the selected item."""
+def _make_rename_action(name: str, description: str, hotkey: str | None, ctree_fn: Any) -> type:
+    """Factory: create a rename action class wrapping a ctree function."""
+    class _RenameAction(HexRaysPopupAction):
+        _description = description
+        _hotkey = hotkey
+        _ctree_fn = staticmethod(ctree_fn)
 
-    description = "Take other name"
-    hotkey = "Ctrl+N"
+        def __init__(self, session: Session | None = None) -> None:
+            super().__init__(session)
 
-    def __init__(self, session: Session | None = None) -> None:
-        super().__init__(session)
+        def activate(self, ctx: Any) -> None:
+            hx_view = getattr(ctx, "widget", None)
+            if hx_view and getattr(hx_view, "item", None):
+                self._ctree_fn(hx_view.item)
 
-    def activate(self, ctx: Any) -> None:
-        pass
+        def check(self, hx_view: Any) -> bool:
+            return hx_view is not None
 
-    def check(self, hx_view: Any) -> bool:
-        return True
-
-
-class RenameInside(HexRaysPopupAction):
-    """Rename a variable inside an argument expression."""
-
-    description = "Rename inside argument"
-    hotkey = "Shift+N"
-
-    def __init__(self, session: Session | None = None) -> None:
-        super().__init__(session)
-
-    def activate(self, ctx: Any) -> None:
-        pass
-
-    def check(self, hx_view: Any) -> bool:
-        return True
+    _RenameAction.__name__ = name
+    _RenameAction.description = description
+    _RenameAction.hotkey = hotkey
+    return _RenameAction
 
 
-class RenameOutside(HexRaysPopupAction):
-    """Take the argument name and propagate it outwards."""
-
-    description = "Take argument name"
-    hotkey = "Ctrl+Shift+N"
-
-    def __init__(self, session: Session | None = None) -> None:
-        super().__init__(session)
-
-    def activate(self, ctx: Any) -> None:
-        pass
-
-    def check(self, hx_view: Any) -> bool:
-        return True
-
-
-class RenameMemberFromFunctionName(HexRaysPopupAction):
-    """Take a struct member name from the called function name.
-
-    B10 fix: hotkey is Ctrl+Alt+N, not Ctrl+N (Ctrl+N collides with RenameOther).
-    """
-
-    description = "Take name from function"
-    hotkey = "Ctrl+Alt+N"
-
-    def __init__(self, session: Session | None = None) -> None:
-        super().__init__(session)
-
-    def activate(self, ctx: Any) -> None:
-        pass
-
-    def check(self, hx_view: Any) -> bool:
-        return True
-
-
-class RenameUsingAssert(HexRaysPopupAction):
-    """Rename a variable based on the assert argument that checks it."""
-
-    description = "Rename as assert argument"
-    hotkey = None
-
-    def __init__(self, session: Session | None = None) -> None:
-        super().__init__(session)
-
-    def activate(self, ctx: Any) -> None:
-        pass
-
-    def check(self, hx_view: Any) -> bool:
-        return True
-
-
-class PropagateName(HexRaysPopupAction):
-    """Propagate the selected name to all matching references."""
-
-    description = "Propagate name"
-    hotkey = "P"
-
-    def __init__(self, session: Session | None = None) -> None:
-        super().__init__(session)
-
-    def activate(self, ctx: Any) -> None:
-        pass
-
-    def check(self, hx_view: Any) -> bool:
-        return True
+# 6 rename actions. B10 fix: RenameMemberFromFunctionName uses Ctrl+Alt+N
+RenameOther = _make_rename_action("RenameOther", "Take other name", "Ctrl+N", rename_other)
+RenameInside = _make_rename_action("RenameInside", "Push var name into arg", "Shift+N", rename_inside)
+RenameOutside = _make_rename_action("RenameOutside", "Take arg name for var", "Ctrl+Shift+N", rename_outside)
+RenameMemberFromFunctionName = _make_rename_action(
+    "RenameMemberFromFunctionName", "Take name from function", "Ctrl+Alt+N", rename_member_from_function_name,
+)
+RenameUsingAssert = _make_rename_action("RenameUsingAssert", "Rename using assert", None, rename_using_assert)
+PropagateName = _make_rename_action("PropagateName", "Propagate name", "P", propagate_name)
