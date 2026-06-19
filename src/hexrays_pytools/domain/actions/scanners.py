@@ -87,8 +87,8 @@ class ShallowScanVariable(Scanner):
         hx_view = idaapi.get_widget_vdui(ctx.widget)
         cfunc = hx_view.cfunc
         workspace = self._workspace()
-        if workspace is None or workspace.model is None:
-            logger.warning("ShallowScanVariable: no active workspace model")
+        if workspace is None:
+            logger.warning("ShallowScanVariable: no active session — skipping")
             return
         if not self._can_be_scanned(cfunc, hx_view.item):
             return
@@ -111,8 +111,8 @@ class DeepScanVariable(Scanner):
         hx_view = idaapi.get_widget_vdui(ctx.widget)
         cfunc = hx_view.cfunc
         workspace = self._workspace()
-        if workspace is None or workspace.model is None:
-            logger.warning("DeepScanVariable: no active workspace model")
+        if workspace is None:
+            logger.warning("DeepScanVariable: no active session — skipping")
             return
         if not self._can_be_scanned(cfunc, hx_view.item):
             return
@@ -196,8 +196,8 @@ class DeepScanReturn(Scanner):
         hx_view = idaapi.get_widget_vdui(ctx.widget)
         cfunc = hx_view.cfunc
         workspace = self._workspace()
-        if workspace is None or workspace.model is None:
-            logger.warning("DeepScanReturn: no active workspace model")
+        if workspace is None:
+            logger.warning("DeepScanReturn: no active session — skipping")
             return
         obj = ReturnedObject(int(cfunc.entry_ea))
         visitor = DeepReturnVisitor(
@@ -230,8 +230,8 @@ class DeepScanFunctions(Action):
             if self._session is not None and self._session.recon is not None
             else None
         )
-        if workspace is None or workspace.model is None:
-            logger.warning("DeepScanFunctions: no active workspace model")
+        if workspace is None:
+            logger.warning("DeepScanFunctions: no active session — skipping")
             return
         consts = self._session.consts if self._session is not None else None
         for idx in ctx.chooser_selection:
