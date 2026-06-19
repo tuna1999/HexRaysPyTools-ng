@@ -185,6 +185,17 @@ class _MockIdaModule:
         def type(self) -> Any: ...
         cmt: str = ""
 
+    class DecompilationFailure(Exception):  # noqa: N818 - mirror IDA SWIG casing
+        """Stand-in for ``idaapi.DecompilationFailure``.
+
+        Production code (``scanner/helpers.decompile_function``) catches this
+        when Hex-Rays cannot decompile a function. It MUST be a real
+        Exception subclass — a MagicMock would not be raisable, so
+        ``except idaapi.DecompilationFailure`` in production code and
+        ``side_effect=idaapi.DecompilationFailure`` in tests would both
+        misbehave.
+        """
+
     # UI base types that production code subclasses (PluginForm for dock
     # forms, GraphViewer for graph widgets, Choose for list choosers). Same
     # rationale as plugin_t above: a MagicMock base would make

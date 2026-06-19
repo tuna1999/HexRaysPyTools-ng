@@ -1,10 +1,10 @@
 """ctree visitor base classes for the struct-reconstruction scanner.
 
-Ported from the original ``api.py:211-405`` (~195 LOC). Provides the
+Ported from the original ``api.py:211-580``. Provides the
 ctree-parentee-t visitor hierarchy that the scanner engine uses to walk a
 decompiled function and extract struct member candidates.
 
-Three layers of visitors live here:
+Five layers of visitors live here:
 
 * :class:`ObjectVisitor` (base) — owns the tracked-objects list and the
   apply-callback. Subclasses override :meth:`_manipulate` to react to each
@@ -14,12 +14,14 @@ Three layers of visitors live here:
 * :class:`ObjectUpwardsVisitor` — *backward* traversal: builds a
   from→to assignment graph, then re-traverses to find what feeds the
   tracked object.
-
-Recursive variants (cross-function) live in Phase A.4.
+* :class:`RecursiveObjectVisitor` (base for cross-function) + the two
+  concrete recursive variants (:class:`RecursiveObjectDownwardsVisitor`,
+  :class:`RecursiveObjectUpwardsVisitor`) — walk across function
+  boundaries by decompiling callees/callers.
 
 All visitors operate on live Hex-Rays ctree objects — this module is not
-unit-testable with mocks, so it is excluded from the coverage gate
-(``pyproject.toml``).
+unit-testable end-to-end with mocks, so it is excluded from the coverage
+gate (``pyproject.toml``).
 """
 from __future__ import annotations
 
@@ -28,7 +30,20 @@ from typing import Any
 
 import idaapi  # type: ignore[import-not-found]
 
-from .scanned_object import SO_RETURNED_OBJECT, ScanObject
+from ...infra.arch.arch import (
+    get_funcs_calling_address,
+    is_imported_ea,
+    to_hex,
+)
+from ..types.func_type import get_call_argument_info
+from .helpers import decompile_function
+from .scanned_object import (
+    SO_CALL_ARGUMENT,
+    SO_RETURNED_OBJECT,
+    CallArgObject,
+    ScanObject,
+    VariableObject,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -310,3 +325,287 @@ class ObjectUpwardsVisitor(ObjectVisitor):
             result |= downstream
         self._objects = list(result)
         self._tree.clear()
+
+
+# --- Recursive (cross-function) visitors -------------------------------------
+
+
+class RecursiveObjectVisitor(ObjectVisitor):
+    """Base for cross-function visitors.
+
+    Subclasses (:class:`RecursiveObjectDownwardsVisitor`,
+    :class:`RecursiveObjectUpwardsVisitor`) walk across function
+    boundaries by decompiling callees/callers. A ``_visited`` set of
+    ``(func_ea, arg_idx)`` tuples prevents infinite recursion; a
+    ``_new_for_visit`` queue collects targets discovered during one pass
+    and is drained afterward.
+
+    The four lifecycle hooks (``_start``, ``_start_iteration``,
+    ``_finish``, ``_finish_iteration``) let subclasses inject per-function
+    setup/teardown without overriding :meth:`process`.
+    """
+
+    def __init__(
+        self,
+        cfunc: Any,
+        obj: Any,
+        data: Any = None,
+        skip_until_object: bool = False,
+        visited: set[tuple[int, int]] | None = None,
+        imported_ea: set[int] | None = None,
+    ) -> None:
+        super().__init__(cfunc, obj, data, skip_until_object)
+        self._visited: set[tuple[int, int]] = visited if visited else set()
+        self._new_for_visit: set[tuple[int, int]] = set()
+        self.crippled = False
+        self._arg_idx: int = -1
+        # Session-owned import cache (replaces the original cache.imported_ea
+        # global). Callers pass session.imported_ea so recursive scans can
+        # skip imported (PLT) call targets.
+        self._imported_ea: set[int] = imported_ea if imported_ea is not None else set()
+        # Debug scan-tree (logging only — not part of the algorithm).
+        self._debug_scan_tree: dict[tuple[str, int], set[tuple[str, int]]] = {}
+        self._debug_scan_tree_root: str = ""
+        self._debug_message: list[str] = []
+
+    def set_callbacks(
+        self,
+        manipulate: Any = None,
+        start: Any = None,
+        start_iteration: Any = None,
+        finish: Any = None,
+        finish_iteration: Any = None,
+    ) -> None:
+        """Override any of the 5 lifecycle hooks at runtime.
+
+        Each hook is replaced by a bound method of the passed-in function.
+        ``# type: ignore[method-assign]`` is intentional — swapping a
+        method at runtime is a deliberate plugin pattern (the original
+        does the same) that mypy cannot model.
+        """
+        super().set_callbacks(manipulate)
+        if start is not None:
+            self._start = start.__get__(self, type(self))  # type: ignore[method-assign]
+        if start_iteration is not None:
+            self._start_iteration = start_iteration.__get__(self, type(self))  # type: ignore[method-assign]
+        if finish is not None:
+            self._finish = finish.__get__(self, type(self))  # type: ignore[method-assign]
+        if finish_iteration is not None:
+            self._finish_iteration = finish_iteration.__get__(self, type(self))  # type: ignore[method-assign]
+
+    def prepare_new_scan(self, cfunc: Any, arg_idx: int, obj: Any, skip: bool = False) -> None:
+        """Reset per-function state for a fresh callee/caller scan."""
+        self._cfunc = cfunc
+        self._arg_idx = arg_idx
+        self._objects = [obj]
+        self._init_obj = obj
+        self._skip = False
+        self.crippled = self._is_func_crippled()
+
+    def process(self) -> None:
+        """Run the full recursive scan: start → iterate → finish → log."""
+        self._start()
+        self._recursive_process()
+        self._finish()
+        self._dump_scan_tree()
+
+    def _recursive_process(self) -> None:
+        """One iteration: per-function setup, walk, per-function teardown."""
+        self._start_iteration()
+        super().process()
+        self._finish_iteration()
+
+    def _manipulate(self, cexpr: Any, obj: Any) -> None:
+        # _check_call collects callee/caller targets BEFORE the real
+        # manipulation runs, so the recursive drain sees them.
+        self._check_call(cexpr)
+        super()._manipulate(cexpr, obj)
+
+    def _check_call(self, cexpr: Any) -> None:
+        """Detect calls worth recursing into. Subclasses override."""
+        raise NotImplementedError("Subclasses must implement _check_call")
+
+    def _add_visit(self, func_ea: int, arg_idx: int) -> bool:
+        """Record a (func, arg) to recurse into. Returns True if new."""
+        key = (int(func_ea), int(arg_idx))
+        if key in self._visited:
+            return False
+        self._visited.add(key)
+        self._new_for_visit.add(key)
+        return True
+
+    def _add_scan_tree_info(self, func_ea: int, arg_idx: int) -> None:
+        """Append a node to the debug scan-tree (for logging)."""
+        try:
+            head_node = (idaapi.get_name(int(self._cfunc.entry_ea)), self._arg_idx)
+            tail_node = (idaapi.get_name(int(func_ea)), int(arg_idx))
+        except Exception:  # noqa: BLE001 — debug logging must never crash the scan
+            return
+        self._debug_scan_tree.setdefault(head_node, set()).add(tail_node)
+
+    def _dump_scan_tree(self) -> None:
+        """Pretty-print the recursive scan tree at INFO level (debug only)."""
+        self._debug_scan_tree_root = idaapi.get_name(int(self._cfunc.entry_ea))
+        self._debug_message = [f"--- Scan Tree---\n{self._debug_scan_tree_root}"]
+        self._prepare_debug_message()
+        if self._debug_message:
+            logger.info("%s\n---------------", "\n".join(self._debug_message))
+
+    def _prepare_debug_message(self, key: tuple[str, int] | None = None, level: int = 1) -> None:
+        if key is None:
+            key = (self._debug_scan_tree_root, -1)
+        if key in self._debug_scan_tree:
+            for func_name, arg_idx in self._debug_scan_tree[key]:
+                prefix = " | " * (level - 1) + " |_ "
+                self._debug_message.append(f"{prefix}{func_name} (idx: {arg_idx})")
+                self._prepare_debug_message((func_name, arg_idx), level + 1)
+
+    def _is_func_crippled(self) -> bool:
+        """True if the function body is just a thunk (single return / single call).
+
+        Crippled functions propagate the object unchanged, so the scanner
+        skips applying a type when it sees one (the type belongs to the
+        caller, not this passthrough).
+        """
+        b = self._cfunc.body.cblock
+        if b.size() == 1:
+            e = b.at(0)
+            return (
+                int(e.op) == int(idaapi.cit_return)
+                or (int(e.op) == int(idaapi.cit_expr) and int(e.cexpr.op) == int(idaapi.cot_call))
+            )
+        return False
+
+    # Lifecycle hooks (no-ops by default; subclasses or set_callbacks override).
+    def _start(self) -> None:
+        """Called once at the start of the whole recursive scan."""
+
+    def _start_iteration(self) -> None:
+        """Called before each individual function is walked."""
+
+    def _finish(self) -> None:
+        """Called once after all recursion completes."""
+
+    def _finish_iteration(self) -> None:
+        """Called after each individual function is walked."""
+
+
+class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVisitor):
+    """Recursive forward visitor: also walk into callees.
+
+    When the tracked object is passed as an argument to a call, decompile
+    the callee and scan it (the callee's argument lvar becomes the new
+    seed). Mirrors the original ``RecursiveObjectDownwardsVisitor``.
+    """
+
+    def __init__(
+        self,
+        cfunc: Any,
+        obj: Any,
+        data: Any = None,
+        skip_until_object: bool = False,
+        visited: set[tuple[int, int]] | None = None,
+        imported_ea: set[int] | None = None,
+    ) -> None:
+        super().__init__(cfunc, obj, data, skip_until_object, visited, imported_ea)
+
+    def _check_call(self, cexpr: Any) -> None:
+        """If the tracked object is a call argument, queue the callee for scanning."""
+        parent = self.parent_expr()
+        if parent is None:
+            return
+        parents_size = int(self.parents.size())
+        grandparent = self.parents.at(parents_size - 2) if parents_size >= 2 else None
+        if int(parent.op) == int(idaapi.cot_call):
+            call_cexpr = parent
+            arg_cexpr = cexpr
+        elif (
+            grandparent is not None
+            and int(parent.op) == int(idaapi.cot_cast)
+            and int(grandparent.cexpr.op) == int(idaapi.cot_call)
+        ):
+            call_cexpr = grandparent.cexpr
+            arg_cexpr = parent
+        else:
+            return
+        idx, _ = get_call_argument_info(call_cexpr, arg_cexpr)
+        if idx == -1:
+            return
+        func_ea = int(call_cexpr.x.obj_ea)
+        if func_ea == int(idaapi.BADADDR):
+            return
+        if self._add_visit(func_ea, idx):
+            self._add_scan_tree_info(func_ea, idx)
+
+    def _recursive_process(self) -> None:
+        """Walk this function, then drain the callee queue recursively."""
+        super()._recursive_process()
+        while self._new_for_visit:
+            func_ea, arg_idx = self._new_for_visit.pop()
+            if is_imported_ea(func_ea, self._imported_ea):
+                continue
+            cfunc = decompile_function(func_ea)
+            if cfunc is not None:
+                lvars = list(cfunc.get_lvars())
+                assert arg_idx < len(lvars), (
+                    f"Wrong argument at func {to_hex(func_ea)}"
+                )
+                obj = VariableObject(lvars[arg_idx], arg_idx)
+                self.prepare_new_scan(cfunc, arg_idx, obj)
+                self._recursive_process()
+
+
+class RecursiveObjectUpwardsVisitor(RecursiveObjectVisitor, ObjectUpwardsVisitor):
+    """Recursive backward visitor: also walk into callers.
+
+    When the tracked object is a function argument, decompile each caller
+    and scan it (the call site in the caller becomes the new seed).
+    Mirrors the original ``RecursiveObjectUpwardsVisitor``.
+    """
+
+    def __init__(
+        self,
+        cfunc: Any,
+        obj: Any,
+        data: Any = None,
+        skip_after_object: bool = False,
+        visited: set[tuple[int, int]] | None = None,
+        imported_ea: set[int] | None = None,
+    ) -> None:
+        super().__init__(cfunc, obj, data, skip_after_object, visited, imported_ea)
+
+    def prepare_new_scan(self, cfunc: Any, arg_idx: int, obj: Any, skip: bool = False) -> None:
+        super().prepare_new_scan(cfunc, arg_idx, obj, skip)
+        self._call_obj = obj if int(obj.id) == int(SO_CALL_ARGUMENT) else None
+
+    def _check_call(self, cexpr: Any) -> None:
+        """If a local arg-var is used, queue all callers for scanning."""
+        if int(cexpr.op) != int(idaapi.cot_var):
+            return
+        lvars = list(self._cfunc.get_lvars())
+        idx = int(cexpr.v.idx)
+        if idx >= len(lvars) or not lvars[idx].is_arg_var:
+            return
+        func_ea = int(self._cfunc.entry_ea)
+        arg_idx = idx
+        if self._add_visit(func_ea, arg_idx):
+            for callee_ea in get_funcs_calling_address(func_ea):
+                self._add_scan_tree_info(callee_ea, arg_idx)
+
+    def _recursive_process(self) -> None:
+        """Walk this function, then drain the caller queue recursively."""
+        super()._recursive_process()
+        while self._new_for_visit:
+            new_visit = list(self._new_for_visit)
+            self._new_for_visit.clear()
+            for func_ea, arg_idx in new_visit:
+                callers = get_funcs_calling_address(func_ea)
+                callee_cfunc = decompile_function(func_ea)
+                if callee_cfunc is None:
+                    continue
+                obj = CallArgObject.create(callee_cfunc, arg_idx)
+                for callee_ea in callers:
+                    cfunc = decompile_function(callee_ea)
+                    if cfunc is not None:
+                        self.prepare_new_scan(cfunc, arg_idx, obj, False)
+                        super()._recursive_process()

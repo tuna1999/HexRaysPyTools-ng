@@ -37,6 +37,18 @@ def get_funcs_calling_address(ea: int) -> set[int]:
     return xrefs
 
 
+def is_imported_ea(ea: int, imported_ea: set[int]) -> bool:
+    """True if `ea` points into an imported function (PLT or the import cache).
+
+    Mirrors the original ``helper.is_imported_ea``. The original read the
+    import cache from a module global (``cache.imported_ea``); we take it
+    as a parameter so callers pass the Session-owned set explicitly.
+    """
+    if idc.get_segm_name(ea) == ".plt":
+        return True
+    return (ea + int(idaapi.get_imagebase())) in imported_ea
+
+
 def to_hex(ea: int) -> str:
     """Format `ea` as a clickable hex address for the IDA output window.
 
