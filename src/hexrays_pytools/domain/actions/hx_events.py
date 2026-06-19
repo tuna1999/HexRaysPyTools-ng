@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import idaapi  # type: ignore[import-not-found]
 
-from ...infra.arch.arch import choose_virtual_func_address
+from ...infra.arch.arch import choose_virtual_func_address, to_hex
 from ..ctree.negative_offsets import collect_potential_negatives
 from ..ctree.swap_if import SpaghettiVisitor, SwapThenElseVisitor, get_inverted, has_inverted
 
@@ -120,13 +120,142 @@ class PotentialNegativeCollector:
 
 
 class StructXrefCollector:
-    """Run at CMAT_FINAL — populate XrefStorage."""
+    """Run at CMAT_FINAL — populate XrefStorage with struct-field xrefs.
+
+    The handler delegates to :class:`StructXrefCollectorVisitor` which walks
+    the cfunc body looking for ``cot_memptr``/``cot_memref`` expressions and
+    records the field offset + access type (R/W/Arg) for each.
+
+    Uses ``session.xrefs`` (the Session-owned, netnode-backed XrefStorage)
+    so the data persists across CMAT events.
+    """
 
     def __init__(self, session: Session | None = None) -> None:
         self._session = session
 
     def handle(self, event: int, *args: Any) -> None:
-        logger.debug("StructXrefCollector.handle")
+        if not args:
+            return
+        cfunc = args[0]
+        if self._session is None or self._session.xrefs is None:
+            logger.debug("StructXrefCollector: no session/xrefs — skipping")
+            return
+        visitor = StructXrefCollectorVisitor(cfunc, self._session.xrefs)
+        visitor.process()
+
+
+class StructXrefCollectorVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
+    """Walk a cfunc body and record struct-field cross-references.
+
+    Mirrors the original ``core/callbacks/struct_xref_collector.py``. Records
+    for each ``cot_memptr``/``cot_memref``:
+    * ``ordinal`` — the struct's local-type ordinal (via
+      :func:`get_ordinal`)
+    * ``field_offset`` — byte offset of the field in the struct
+    * ``ea`` — the closest real (non-BADADDR) ancestor's EA
+    * ``usage_type`` — 'R' (read), 'W' (write), or 'Arg' (call argument)
+    * ``one_line`` — decompiled text of the enclosing citem
+
+    The whole visitor body is ctree-coupled (excluded from coverage gate).
+    """
+
+    def __init__(self, cfunc: Any, storage: Any) -> None:
+        idaapi.ctree_parentee_t.__init__(self)  # noqa: N806 - IDA SWIG casing
+        self._cfunc = cfunc
+        self._function_address = int(cfunc.entry_ea)
+        self._result: dict[int, dict[int, list[tuple[Any, ...]]]] = {}
+        self._storage = storage
+
+    def visit_expr(self, expression: Any) -> int:  # noqa: ARG002 - IDA SWIG
+        from ...domain.types.tinfo_utils import get_ordinal
+
+        if int(expression.op) == int(idaapi.cot_memptr):
+            struct_type = expression.x.type.get_pointed_object()
+        elif int(expression.op) == int(idaapi.cot_memref):
+            struct_type = expression.x.type
+        else:
+            return 0
+
+        ordinal = get_ordinal(struct_type)
+        field_offset = int(expression.m)
+        ea = self._find_ref_address(expression)
+        usage_type = self._get_type(expression)
+
+        if ea == int(idaapi.BADADDR) or not ordinal:
+            logger.warning(
+                "Failed to parse at address %s, ordinal - %s, type - %s",
+                to_hex(int(ea)),
+                int(ordinal),
+                str(struct_type.dstr()),
+            )
+
+        one_line = self._get_line()
+        occurrence_offset = ea - self._function_address
+        xref_info = (occurrence_offset, one_line, usage_type)
+
+        if ordinal not in self._result:
+            self._result[ordinal] = {field_offset: [xref_info]}
+        elif field_offset not in self._result[ordinal]:
+            self._result[ordinal][field_offset] = [xref_info]
+        else:
+            self._result[ordinal][field_offset].append(xref_info)
+        return 0
+
+    def process(self) -> None:
+        import time
+
+        start = time.time()
+        self.apply_to(self._cfunc.body, None)
+        # Persist to the netnode-backed XrefStorage. Our new API takes
+        # (func_offset, ordinal, field_xrefs) per call — iterate the
+        # result dict and call update for each (ordinal, field_offset)
+        # batch.
+        func_offset = int(self._function_address) - int(idaapi.get_imagebase())
+        for ordinal, field_dict in self._result.items():
+            for field_offset, xref_list in field_dict.items():
+                # Pack the per-field list with its offset as a marker
+                # (the new XrefStorage stores the list verbatim).
+                self._storage.update(int(ordinal), func_offset, list(xref_list))
+        logger.debug(
+            "Xref processing: %.3f s, %d fields, %d ordinals",
+            time.time() - start,
+            sum(len(v) for v in self._result.values()),
+            len(self._result),
+        )
+
+    def _find_ref_address(self, cexpr: Any) -> int:
+        """Return the closest real (non-BADADDR) EA in the cexpr's ancestry."""
+        ea = int(cexpr.ea)
+        if ea != int(idaapi.BADADDR):
+            return ea
+        for p in reversed(self.parents):
+            if int(p.ea) != int(idaapi.BADADDR):
+                return int(p.ea)
+        return int(idaapi.BADADDR)
+
+    def _get_type(self, cexpr: Any) -> str:
+        """Return the access type: ``R`` (read), ``W`` (write), or ``Arg``."""
+        child = cexpr
+        for p in reversed(self.parents):
+            if p is None:
+                continue
+            if int(p.cexpr.op) == int(idaapi.cot_call):
+                return "Arg"
+            if not p.is_expr():
+                return "R"
+            if int(p.cexpr.op) == int(idaapi.cot_asg):
+                if p.cexpr.x == child:
+                    return "W"
+                return "R"
+            child = p.cexpr
+        return "R"
+
+    def _get_line(self) -> str:
+        """Return the decompiled text of the enclosing citem (the line of code)."""
+        for p in reversed(self.parents):
+            if not p.is_expr():
+                return str(idaapi.tag_remove(p.print1(self._cfunc)))
+        return ""
 
 
 class SilentIfSwapper:

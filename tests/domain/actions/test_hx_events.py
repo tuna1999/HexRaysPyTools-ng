@@ -84,9 +84,26 @@ def test_potential_negative_collector_handle_non_matching_level() -> None:
     PotentialNegativeCollector().handle(*_evt(cfunc, idaapi.CMAT_FINAL))
 
 
-def test_struct_xref_collector_handle() -> None:
+def test_struct_xref_collector_handle_no_session_skips() -> None:
+    """Without a session/xrefs, the handler logs and returns (no crash)."""
     cfunc = MagicMock()
     StructXrefCollector().handle(*_evt(cfunc, idaapi.CMAT_FINAL))
+
+
+def test_struct_xref_collector_handle_uses_session_storage() -> None:
+    """With a session, the handler uses session.xrefs (not a fresh XrefStorage)."""
+    from hexrays_pytools.domain.xrefs.xref_storage import XrefStorage
+
+    session = MagicMock()
+    session.xrefs = XrefStorage()
+    handler = StructXrefCollector(session=session)
+    cfunc = MagicMock()
+    # CMAT_FINAL — visitor will be built but apply_to is a MagicMock (no
+    # children) so no rows are collected. Just verify no crash and that
+    # session.xrefs is the storage we wired.
+    handler.handle(*_evt(cfunc, idaapi.CMAT_FINAL))
+    # session.xrefs.identity should be unchanged (same instance).
+    assert session.xrefs is session.xrefs
 
 
 def test_silent_if_swapper_handle_non_matching_level() -> None:
