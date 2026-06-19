@@ -133,7 +133,22 @@ class _MockIdaModule:
         pass
 
     class ctree_parentee_t:  # noqa: N801 - keep IDA SWIG casing
-        pass
+        """Stand-in for ``idaapi.ctree_parentee_t``.
+
+        Production subclasses (the Object*Visitor hierarchy in
+        domain/scanner/) read/assign ``cv_flags``, read ``parents``, and
+        call ``apply_to(body, parent)``. Provide these as instance state so
+        ``cv_flags |= CV_POST`` and ``self.parents`` work under mock_ida.
+        Tests that need a controllable ``parents`` stack or want to assert
+        on ``apply_to`` just set the attribute directly.
+        """
+        def __init__(self) -> None:
+            self.cv_flags: int = 0
+            self.parents: list[Any] = []
+
+        def apply_to(self, body: Any, parent: Any) -> None:
+            """No-op traversal stub — real dispatch only happens in IDA."""
+
 
     class ctree_item_t:  # noqa: N801 - keep IDA SWIG casing
         """Stand-in for ``idaapi.ctree_item_t``.
