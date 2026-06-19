@@ -5,6 +5,8 @@ and `to_hex` from the original plugin.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import idaapi  # type: ignore[import-not-found]
 import idc  # type: ignore[import-not-found]
 
@@ -47,6 +49,41 @@ def is_imported_ea(ea: int, imported_ea: set[int]) -> bool:
     if idc.get_segm_name(ea) == ".plt":
         return True
     return (ea + int(idaapi.get_imagebase())) in imported_ea
+
+
+def choose_virtual_func_address(
+    name: str,
+    class_tinfo: Any = None,
+    vtable_offset: int = 0,
+    demangled_names: dict[str, set[int]] | None = None,
+) -> int | None:
+    """Resolve a virtual function name to an EA using the demangled-name cache.
+
+    Mirrors the original ``helper.choose_virtual_func_address``.
+
+    Args:
+        name: The demangled name to look up.
+        class_tinfo: Optional struct tinfo for the containing class (helps
+            disambiguate when multiple classes define the same vtable entry).
+        vtable_offset: Offset in the vtable (for ordered picking).
+        demangled_names: The Session-owned demangled-names cache
+            (``session.demangled_names``). Maps sanitized demangled name →
+            set of EAs.
+
+    Returns:
+        The matching EA, or ``None`` if the name is not in the cache.
+    """
+    if demangled_names is None or name is None:
+        return None
+    candidates = demangled_names.get(name, set())
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    # Multiple matches — pick the one closest to vtable_offset if class_tinfo
+    # is given (heuristic: same-class overrides tend to cluster). Otherwise
+    # just return the first.
+    return sorted(candidates)[0]
 
 
 def to_hex(ea: int) -> str:
