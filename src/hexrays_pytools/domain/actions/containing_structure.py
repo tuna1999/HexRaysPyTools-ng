@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import idaapi  # type: ignore[import-not-found]
+
 from ..ctree.negative_offsets import (
+    can_reset_containing,
+    can_select_containing,
     reset_containing_structure,
     select_containing_structure,
 )
@@ -11,6 +15,10 @@ from .action import HexRaysPopupAction
 
 if TYPE_CHECKING:
     from ..session import Session
+
+
+def _get_hx_view(ctx: Any) -> Any:
+    return idaapi.get_widget_vdui(ctx.widget)
 
 
 class SelectContainingStructure(HexRaysPopupAction):
@@ -24,12 +32,12 @@ class SelectContainingStructure(HexRaysPopupAction):
         super().__init__(session)
 
     def activate(self, ctx: Any) -> None:
-        hx_view = getattr(ctx, "widget", None)
-        if hx_view and getattr(hx_view, "item", None):
-            select_containing_structure(hx_view.item)
+        hx_view = _get_hx_view(ctx)
+        if hx_view is not None:
+            select_containing_structure(hx_view)
 
     def check(self, hx_view: Any) -> bool:
-        return hx_view is not None
+        return can_select_containing(hx_view)
 
 
 class ResetContainingStructure(HexRaysPopupAction):
@@ -42,9 +50,9 @@ class ResetContainingStructure(HexRaysPopupAction):
         super().__init__(session)
 
     def activate(self, ctx: Any) -> None:
-        hx_view = getattr(ctx, "widget", None)
-        if hx_view and getattr(hx_view, "item", None):
-            reset_containing_structure(hx_view.item)
+        hx_view = _get_hx_view(ctx)
+        if hx_view is not None:
+            reset_containing_structure(hx_view)
 
     def check(self, hx_view: Any) -> bool:
-        return hx_view is not None
+        return can_reset_containing(hx_view)
