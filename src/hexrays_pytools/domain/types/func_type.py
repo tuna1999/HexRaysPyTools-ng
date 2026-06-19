@@ -40,3 +40,45 @@ def set_func_return(func_tinfo: idaapi.tinfo_t, new_type: idaapi.tinfo_t) -> boo
         return False
     func_data.rettype = new_type
     return bool(func_tinfo.create_func(func_data, idaapi.BT_FUNC))
+
+
+def get_call_argument_info(
+    call_expr: idaapi.tinfo_t,
+    child_expr: idaapi.tinfo_t,
+) -> tuple[int, idaapi.tinfo_t | None]:
+    """Find which argument of `call_expr` is `child_expr`.
+
+    Returns (arg_index, declared_param_type). The param type comes from the
+    callee's function type (the call's `.x.type.get_nth_arg(idx)`); None if
+    the callee has no declared arg at that index.
+
+    Mirrors the original `helper.get_func_argument_info(call, child)`.
+    """
+    arg_index = -1
+    for i, arg in enumerate(call_expr.a):
+        if arg == child_expr:
+            arg_index = i
+            break
+    if arg_index == -1:
+        return -1, None
+    func_tinfo = call_expr.x.type.get_pointed_object()
+    nargs = func_tinfo.get_nargs() if hasattr(func_tinfo, "get_nargs") else 0
+    param: idaapi.tinfo_t | None = None
+    if arg_index < int(nargs):
+        param = func_tinfo.get_nth_arg(arg_index)
+    return arg_index, param
+
+
+def set_funcptr_argument(
+    funcptr_tinfo: idaapi.tinfo_t,
+    index: int,
+    arg_tinfo: idaapi.tinfo_t,
+) -> bool:
+    """Set one argument type on a function-pointer tinfo (re-wraps the ptr).
+
+    Mirrors the original `helper.set_funcptr_argument`.
+    """
+    func_tinfo = funcptr_tinfo.get_pointed_object()
+    if not set_func_argument(func_tinfo, index, arg_tinfo):
+        return False
+    return bool(funcptr_tinfo.create_ptr(func_tinfo))
