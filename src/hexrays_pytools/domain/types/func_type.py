@@ -82,3 +82,26 @@ def set_funcptr_argument(
     if not set_func_argument(func_tinfo, index, arg_tinfo):
         return False
     return bool(funcptr_tinfo.create_ptr(func_tinfo))
+
+
+def get_func_arg_name(func_tinfo: idaapi.tinfo_t, arg_idx: int) -> str | None:
+    """Get the name of the function argument at `arg_idx`, or None if out of range.
+
+    Mirrors the original `helper.get_func_arg_name`.
+    """
+    func_data = idaapi.func_type_data_t()
+    func_tinfo.get_func_details(func_data)
+    if arg_idx < int(func_tinfo.get_nargs()):
+        return str(func_data[arg_idx].name)
+    return None
+
+
+def set_func_arg_name(func_tinfo: idaapi.tinfo_t, arg_idx: int, name: str) -> None:
+    """Set the name of the function argument at `arg_idx`.
+
+    Mirrors the original `helper.set_func_arg_name`.
+    """
+    func_data = idaapi.func_type_data_t()
+    func_tinfo.get_func_details(func_data)
+    func_data[arg_idx].name = name
+    func_tinfo.create_func(func_data)

@@ -1,7 +1,12 @@
 """Test tinfo_utils."""
 from unittest.mock import MagicMock
 
-from hexrays_pytools.domain.types.tinfo_utils import get_nice_pointed_object, get_ordinal
+from hexrays_pytools.domain.types.tinfo_utils import (
+    change_member_name,
+    get_member_name,
+    get_nice_pointed_object,
+    get_ordinal,
+)
 
 
 def test_get_ordinal_for_udt() -> None:
@@ -36,3 +41,24 @@ def test_get_nice_pointed_object_strips_p() -> None:
     result = get_nice_pointed_object(tinfo)
     # Should be the named tinfo, not the inner
     assert result is not None
+
+
+def test_get_member_name_returns_name() -> None:
+    """get_member_name returns the UDT member name at the byte offset."""
+    idaapi = __import__("idaapi")
+    tinfo = MagicMock()
+    udt_member = MagicMock()
+    udt_member.name = "count"
+    idaapi.udt_member_t.return_value = udt_member
+    assert get_member_name(tinfo, 4) == "count"
+    # offset is converted bytes → bits for the UDT lookup
+    assert udt_member.offset == 32  # 4 * 8
+
+
+def test_change_member_name_calls_idc() -> None:
+    """change_member_name delegates to idc.set_member_name."""
+    idc = __import__("idc")
+    idc.get_struc_id.return_value = 100
+    idc.set_member_name.return_value = True
+    assert change_member_name("MyStruct", 8, "field2") is True
+    idc.set_member_name.assert_called_once_with(100, 8, "field2")

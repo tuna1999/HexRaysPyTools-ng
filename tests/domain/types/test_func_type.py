@@ -3,7 +3,9 @@ from unittest.mock import MagicMock
 
 from hexrays_pytools.domain.types.func_type import (
     get_call_argument_info,
+    get_func_arg_name,
     get_func_argument_info,
+    set_func_arg_name,
     set_func_argument,
     set_func_return,
     set_funcptr_argument,
@@ -178,4 +180,39 @@ def test_set_funcptr_argument_fails_when_inner_set_fails() -> None:
 
     assert set_funcptr_argument(funcptr, 0, MagicMock()) is False
     funcptr.create_ptr.assert_not_called()
+
+
+def test_get_func_arg_name_returns_name() -> None:
+    """get_func_arg_name returns the arg name when index is in range."""
+    idaapi = __import__("idaapi")
+    func_tinfo = MagicMock()
+    func_tinfo.get_nargs.return_value = 2
+    arg = MagicMock()
+    arg.name = "size"
+    func_data = MagicMock()
+    func_data.__getitem__.return_value = arg
+    idaapi.func_type_data_t.return_value = func_data
+    assert get_func_arg_name(func_tinfo, 0) == "size"
+
+
+def test_get_func_arg_name_none_when_out_of_range() -> None:
+    """get_func_arg_name returns None when index >= nargs."""
+    idaapi = __import__("idaapi")
+    func_tinfo = MagicMock()
+    func_tinfo.get_nargs.return_value = 1
+    idaapi.func_type_data_t.return_value = MagicMock()
+    assert get_func_arg_name(func_tinfo, 5) is None
+
+
+def test_set_func_arg_name_sets_and_rebuilds() -> None:
+    """set_func_arg_name sets the arg name and rebuilds the func type."""
+    idaapi = __import__("idaapi")
+    func_tinfo = MagicMock()
+    arg = MagicMock()
+    func_data = MagicMock()
+    func_data.__getitem__.return_value = arg
+    idaapi.func_type_data_t.return_value = func_data
+    set_func_arg_name(func_tinfo, 1, "count")
+    assert arg.name == "count"
+    func_tinfo.create_func.assert_called_once_with(func_data)
 

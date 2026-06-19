@@ -42,6 +42,19 @@ markers = [
     "mock: tests using IDA API mock",
 ]
 
+[tool.coverage.report]
+# ctree walking code (recast.py, rename.py, swap_if.py, negative_offsets.py)
+# operates on live Hex-Rays ctree objects that mocks cannot reproduce. It is
+# verified by loading the plugin in a real IDA (idat headless + manual
+# right-click testing), not by unit tests — so exclude it from the mock-based
+# coverage gate.
+omit = [
+    "*/domain/ctree/recast.py",
+    "*/domain/ctree/rename.py",
+    "*/domain/ctree/swap_if.py",
+    "*/domain/ctree/negative_offsets.py",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

@@ -1,53 +1,146 @@
-"""6 rename action wrappers."""
+"""6 rename action wrappers.
+
+Each wraps the ctree rename engine in ``domain/ctree/rename.py``. The first
+five (Other, Inside, Outside, FromFunctionName, UsingAssert) are self-
+contained; ``PropagateName`` needs the recursive scanner engine and stays a
+no-op until that lands.
+"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ..ctree.rename import (
-    propagate_name,
-    rename_inside,
-    rename_member_from_function_name,
-    rename_other,
-    rename_outside,
-    rename_using_assert,
-)
+import idaapi  # type: ignore[import-not-found]
+
+from ..ctree import rename as engine
 from .action import HexRaysPopupAction
 
 if TYPE_CHECKING:
-    from ..session import Session
+    pass
 
 
-def _make_rename_action(name: str, description: str, hotkey: str | None, ctree_fn: Any) -> type:
-    """Factory: create a rename action class wrapping a ctree function."""
-    class _RenameAction(HexRaysPopupAction):
-        _description = description
-        _hotkey = hotkey
-        _ctree_fn = staticmethod(ctree_fn)
-
-        def __init__(self, session: Session | None = None) -> None:
-            super().__init__(session)
-
-        def activate(self, ctx: Any) -> None:
-            hx_view = getattr(ctx, "widget", None)
-            if hx_view and getattr(hx_view, "item", None):
-                self._ctree_fn(hx_view.item)
-
-        def check(self, hx_view: Any) -> bool:
-            return hx_view is not None
-
-    _RenameAction.__name__ = name
-    _RenameAction.description = description
-    _RenameAction.hotkey = hotkey
-    _RenameAction.menu_path = "HexRaysPyTools/Rename/"
-    return _RenameAction
+_RENAME_MENU_PATH = "HexRaysPyTools/Rename/"
 
 
-# 6 rename actions. B10 fix: RenameMemberFromFunctionName uses Ctrl+Alt+N
-RenameOther = _make_rename_action("RenameOther", "Take other name", "Ctrl+N", rename_other)
-RenameInside = _make_rename_action("RenameInside", "Push var name into arg", "Shift+N", rename_inside)
-RenameOutside = _make_rename_action("RenameOutside", "Take arg name for var", "Ctrl+Shift+N", rename_outside)
-RenameMemberFromFunctionName = _make_rename_action(
-    "RenameMemberFromFunctionName", "Take name from function", "Ctrl+Alt+N", rename_member_from_function_name,
-)
-RenameUsingAssert = _make_rename_action("RenameUsingAssert", "Rename using assert", None, rename_using_assert)
-PropagateName = _make_rename_action("PropagateName", "Propagate name", "P", propagate_name)
+def _get_hx_view(ctx: Any) -> Any:
+    return idaapi.get_widget_vdui(ctx.widget)
+
+
+class RenameOther(HexRaysPopupAction):
+    """Take the other variable's name in an assignment (a = b → a = b's name)."""
+
+    description = "Take other name"
+    hotkey = "Ctrl+N"
+    menu_path = _RENAME_MENU_PATH
+
+    def check(self, hx_view: Any) -> bool:
+        if hx_view is None:
+            return False
+        return engine.extract_rename_other_info(hx_view.cfunc, hx_view.item) is not None
+
+    def activate(self, ctx: Any) -> None:
+        hx_view = _get_hx_view(ctx)
+        if hx_view is None:
+            return
+        info = engine.extract_rename_other_info(hx_view.cfunc, hx_view.item)
+        if info is not None:
+            engine.rename_other(hx_view, info)
+
+
+class RenameInside(HexRaysPopupAction):
+    """Push the variable's name into the called function's parameter."""
+
+    description = "Rename inside argument"
+    hotkey = "Shift+Alt+N"
+    menu_path = _RENAME_MENU_PATH
+
+    def check(self, hx_view: Any) -> bool:
+        if hx_view is None:
+            return False
+        return engine.extract_rename_inside_info(hx_view.cfunc, hx_view.item) is not None
+
+    def activate(self, ctx: Any) -> None:
+        hx_view = _get_hx_view(ctx)
+        if hx_view is None:
+            return
+        info = engine.extract_rename_inside_info(hx_view.cfunc, hx_view.item)
+        if info is not None:
+            engine.rename_inside(hx_view, info)
+
+
+class RenameOutside(HexRaysPopupAction):
+    """Take the called function's parameter name for a local variable."""
+
+    description = "Take argument name"
+    hotkey = "Ctrl+Shift+N"
+    menu_path = _RENAME_MENU_PATH
+
+    def check(self, hx_view: Any) -> bool:
+        if hx_view is None:
+            return False
+        return engine.extract_rename_outside_info(hx_view.cfunc, hx_view.item) is not None
+
+    def activate(self, ctx: Any) -> None:
+        hx_view = _get_hx_view(ctx)
+        if hx_view is None:
+            return
+        info = engine.extract_rename_outside_info(hx_view.cfunc, hx_view.item)
+        if info is not None:
+            engine.rename_outside(hx_view, info)
+
+
+class RenameMemberFromFunctionName(HexRaysPopupAction):
+    """Infer a struct member name from the enclosing getter/setter function."""
+
+    description = "Take name from function"
+    hotkey = "Ctrl+Alt+N"
+    menu_path = _RENAME_MENU_PATH
+
+    def check(self, hx_view: Any) -> bool:
+        if hx_view is None:
+            return False
+        return engine.extract_member_from_func_info(hx_view.cfunc, hx_view.item) is not None
+
+    def activate(self, ctx: Any) -> None:
+        hx_view = _get_hx_view(ctx)
+        if hx_view is None:
+            return
+        info = engine.extract_member_from_func_info(hx_view.cfunc, hx_view.item)
+        if info is not None:
+            engine.rename_member_from_function_name(hx_view, info)
+
+
+class RenameUsingAssert(HexRaysPopupAction):
+    """Rename all callers of an assert-like function by its string argument."""
+
+    description = "Rename as assert argument"
+    hotkey = None
+    menu_path = _RENAME_MENU_PATH
+
+    def check(self, hx_view: Any) -> bool:
+        if hx_view is None:
+            return False
+        return engine.extract_assert_info(hx_view.cfunc, hx_view.item)
+
+    def activate(self, ctx: Any) -> None:
+        hx_view = _get_hx_view(ctx)
+        if hx_view is None:
+            return
+        engine.rename_using_assert(hx_view, hx_view.cfunc, hx_view.item)
+
+
+class PropagateName(HexRaysPopupAction):
+    """Propagate the selected name to all references (needs scanner engine).
+
+    Stub until the ``RecursiveObjectDownwardsVisitor`` engine lands; never
+    enabled in the menu for now.
+    """
+
+    description = "Propagate name"
+    hotkey = "P"
+    menu_path = _RENAME_MENU_PATH
+
+    def check(self, hx_view: Any) -> bool:
+        return False  # disabled until scanner engine ports
+
+    def activate(self, ctx: Any) -> None:
+        pass

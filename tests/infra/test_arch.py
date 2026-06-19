@@ -1,5 +1,10 @@
 """Test arch.is_code_ea and arch.get_ptr."""
-from hexrays_pytools.infra.arch.arch import get_ptr, is_code_ea
+from hexrays_pytools.infra.arch.arch import (
+    get_funcs_calling_address,
+    get_ptr,
+    is_code_ea,
+    to_hex,
+)
 
 
 def test_is_code_ea_strips_arm_thumb_bit() -> None:
@@ -31,3 +36,37 @@ def test_get_ptr_x64_uses_qword() -> None:
     idaapi.is_data.return_value = True
     get_ptr(0x2000)
     idaapi.get_qword.assert_called()
+
+
+def test_to_hex_64bit() -> None:
+    """to_hex formats as 16-digit hex on 64-bit IDA."""
+    __import__("idaapi").get_64bit.return_value = True
+    assert to_hex(0xDEADBEEF) == "0x00000000DEADBEEF"
+
+
+def test_to_hex_32bit() -> None:
+    """to_hex formats as 8-digit hex on 32-bit IDA."""
+    __import__("idaapi").get_64bit.return_value = False
+    assert to_hex(0xDEADBEEF) == "0xDEADBEEF"
+
+
+def test_get_funcs_calling_address_collects_callers() -> None:
+    """get_funcs_calling_address walks code xrefs to the target."""
+    idaapi = __import__("idaapi")
+    idc = __import__("idc")
+    # Simulate two crefs to 0x5000, then BADADDR to stop the loop.
+    idaapi.get_first_cref_to.return_value = 0x1000
+    idaapi.get_next_cref_to.side_effect = [0x2000, idaapi.BADADDR]
+    idc.get_func_attr.side_effect = lambda ea, attr: ea  # func start == xref ea
+    result = get_funcs_calling_address(0x5000)
+    assert result == {0x1000, 0x2000}
+
+
+def test_get_funcs_calling_address_skips_badaddr_funcs() -> None:
+    """get_funcs_calling_address skips xrefs whose function is BADADDR."""
+    idaapi = __import__("idaapi")
+    idc = __import__("idc")
+    idaapi.get_first_cref_to.return_value = 0x1000
+    idaapi.get_next_cref_to.return_value = idaapi.BADADDR
+    idc.get_func_attr.return_value = idaapi.BADADDR  # no containing function
+    assert get_funcs_calling_address(0x5000) == set()
