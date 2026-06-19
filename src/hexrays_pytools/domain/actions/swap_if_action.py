@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ..ctree.swap_if import swap_if_then_else
+import idaapi  # type: ignore[import-not-found]
+
+from ..ctree.swap_if import can_swap, swap_if_then_else
 from .action import HexRaysPopupAction
 
 if TYPE_CHECKING:
@@ -20,9 +22,9 @@ class SwapThenElse(HexRaysPopupAction):
         super().__init__(session)
 
     def activate(self, ctx: Any) -> None:
-        hx_view = getattr(ctx, "widget", None)
-        if hx_view:
+        hx_view = idaapi.get_widget_vdui(ctx.widget)
+        if hx_view is not None:
             swap_if_then_else(hx_view)
 
     def check(self, hx_view: Any) -> bool:
-        return hx_view is not None
+        return can_swap(hx_view)
