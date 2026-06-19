@@ -172,11 +172,17 @@ class CreateVtable(Action):
 
     def activate(self, ctx: Any) -> None:
         ea = int(ctx.cur_ea)
-        if self.check(ea):
-            # Real vtable import requires the structure-builder engine (recon
-            # workspace). Stub the import until that lands; the check still
-            # enables the action correctly.
-            logger.info("CreateVtable at 0x%X (import deferred to recon engine)", ea)
+        if not self.check(ea):
+            return
+        # Build a minimal DiscoveredVTable — the function-pointer entries
+        # are populated inside import_to_structures() by reading the data
+        # at `ea` (which we store on `func_ea`).
+        vtable = DiscoveredVTable(offset=0, tinfo=None, name=f"vtable_{ea:X}", origin=0)
+        vtable.func_ea = ea  # type: ignore[attr-defined]
+        vtable.import_to_structures(ask=False)
+        hx_view = idaapi.get_widget_vdui(ctx.widget) if hasattr(ctx, "widget") else None
+        if hx_view is not None:
+            hx_view.refresh_view(True)
 
     def update(self, ctx: Any) -> int:
         if ctx.widget_type == idaapi.BWN_DISASM:
