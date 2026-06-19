@@ -14,6 +14,7 @@ class GuessAllocation(HexRaysPopupAction):
 
     description = "Guess allocation"
     hotkey = None
+    menu_path = "HexRaysPyTools/Structure/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

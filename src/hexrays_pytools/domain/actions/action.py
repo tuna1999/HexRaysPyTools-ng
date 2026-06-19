@@ -10,10 +10,21 @@ if TYPE_CHECKING:
 
 
 class Action(idaapi.action_handler_t):  # type: ignore[misc]
-    """Base class for all actions."""
+    """Base class for all actions.
+
+    Attributes:
+        description: label shown in the menu.
+        hotkey: global hotkey (or None).
+        menu_path: popup group path. Actions that appear in the right-click
+            menu are grouped under this path (e.g. ``"HexRaysPyTools/Scan/"``).
+            The trailing ``/`` makes IDA create a submenu. ``None`` means the
+            action is not attached to the popup (only triggered by hotkey or
+            the Edit > Plugins menu).
+    """
 
     description: str = ""
     hotkey: str | None = None
+    menu_path: str | None = None
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__()
@@ -31,7 +42,15 @@ class Action(idaapi.action_handler_t):  # type: ignore[misc]
 
 
 class HexRaysPopupAction(Action):
-    """Action attached to right-click menu in pseudocode."""
+    """Action attached to right-click menu in pseudocode.
+
+    Subclasses set ``menu_path`` to place themselves in a submenu of the
+    ``HexRaysPyTools/`` context-menu group (default = the group root).
+    """
+
+    # Default: top of the HexRaysPyTools submenu. Override per-subclass to
+    # nest deeper (e.g. "HexRaysPyTools/Rename/").
+    menu_path: str = "HexRaysPyTools/"
 
     def check(self, hx_view: Any) -> bool:
         raise NotImplementedError
@@ -44,6 +63,8 @@ class HexRaysPopupAction(Action):
 
 class HexRaysXrefAction(Action):
     """Action also enabled in Local Types view (BWN_TILIST)."""
+
+    menu_path: str = "HexRaysPyTools/"
 
     def check(self, hx_view: Any) -> bool:
         raise NotImplementedError
@@ -63,4 +84,9 @@ class HexRaysPopupRequestHandler:
     def handle(self, event: int, *args: Any) -> None:
         form, popup, hx_view = args
         if self._action.check(hx_view):
-            idaapi.attach_action_to_popup(form, popup, self._action.name, None)
+            # The 4th arg (popuppath) groups the action into a submenu.
+            # "HexRaysPyTools/" (trailing slash) creates a "HexRaysPyTools"
+            # submenu; "HexRaysPyTools/Rename/" nests a "Rename" submenu.
+            idaapi.attach_action_to_popup(
+                form, popup, self._action.name, self._action.menu_path
+            )

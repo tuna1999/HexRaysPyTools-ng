@@ -18,6 +18,7 @@ class SelectContainingStructure(HexRaysPopupAction):
     (CONTAINING_RECORD pattern)."""
 
     description = "Select Containing Structure"
+    menu_path = "HexRaysPyTools/Structure/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)
@@ -35,6 +36,7 @@ class ResetContainingStructure(HexRaysPopupAction):
     """Undo a previous SelectContainingStructure assignment."""
 
     description = "Reset Containing Structure"
+    menu_path = "HexRaysPyTools/Structure/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

@@ -15,6 +15,7 @@ class RecastItemLeft(HexRaysPopupAction):
 
     description = "Recast Item (Left)"
     hotkey = "Shift+L"
+    menu_path = "HexRaysPyTools/Recast/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)
@@ -37,6 +38,7 @@ class RecastItemRight(HexRaysPopupAction):
 
     description = "Recast Item (Right)"
     hotkey = "Shift+R"
+    menu_path = "HexRaysPyTools/Recast/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

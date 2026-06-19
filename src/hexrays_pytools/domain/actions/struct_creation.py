@@ -14,6 +14,7 @@ class CreateNewField(HexRaysPopupAction):
 
     description = "Create New Field"
     hotkey = "Ctrl+F"
+    menu_path = "HexRaysPyTools/Structure/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

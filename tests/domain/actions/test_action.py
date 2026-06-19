@@ -41,17 +41,24 @@ def test_hexrays_xref_action_check_raises() -> None:
 
 
 def test_popup_request_handler_calls_attach_when_check_passes() -> None:
-    """Request handler attaches action to popup when check returns True."""
+    """Request handler attaches action to popup when check returns True.
+
+    The attach uses the action's ``menu_path`` (4th arg) so the action lands
+    in its submenu group, not at the popup root.
+    """
     idaapi = __import__("idaapi")
     action = MagicMock()
     action.check.return_value = True
     action.name = "test_action"
+    action.menu_path = "HexRaysPyTools/Scan/"
     handler = HexRaysPopupRequestHandler(action)
     form = MagicMock()
     popup = MagicMock()
     hx_view = MagicMock()
     handler.handle(0, form, popup, hx_view)
-    idaapi.attach_action_to_popup.assert_called_once_with(form, popup, "test_action", None)
+    idaapi.attach_action_to_popup.assert_called_once_with(
+        form, popup, "test_action", "HexRaysPyTools/Scan/"
+    )
 
 
 def test_popup_request_handler_skips_when_check_fails() -> None:
@@ -61,3 +68,30 @@ def test_popup_request_handler_skips_when_check_fails() -> None:
     handler = HexRaysPopupRequestHandler(action)
     handler.handle(0, MagicMock(), MagicMock(), MagicMock())
     idaapi.attach_action_to_popup.assert_not_called()
+
+
+def test_popup_action_default_menu_path_is_group_root() -> None:
+    """HexRaysPopupAction defaults to the HexRaysPyTools/ submenu root."""
+
+    class _P(HexRaysPopupAction):
+        description = "P"
+
+        def activate(self, ctx):  # type: ignore[no-untyped-def]
+            pass
+
+        def check(self, hx_view):  # type: ignore[no-untyped-def]
+            return True
+
+    assert _P().menu_path == "HexRaysPyTools/"
+
+
+def test_plain_action_has_no_menu_path() -> None:
+    """Non-popup Actions default to menu_path None (not in right-click menu)."""
+
+    class _A(Action):
+        description = "A"
+
+        def activate(self, ctx):  # type: ignore[no-untyped-def]
+            pass
+
+    assert _A.menu_path is None

@@ -38,6 +38,7 @@ def _make_rename_action(name: str, description: str, hotkey: str | None, ctree_f
     _RenameAction.__name__ = name
     _RenameAction.description = description
     _RenameAction.hotkey = hotkey
+    _RenameAction.menu_path = "HexRaysPyTools/Rename/"
     return _RenameAction
 
 

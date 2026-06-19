@@ -13,6 +13,7 @@ class ConvertToUsercall(HexRaysPopupAction):
     """Convert the current function signature to __usercall."""
 
     description = "Convert to __usercall"
+    menu_path = "HexRaysPyTools/Function/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)
@@ -28,6 +29,7 @@ class AddRemoveReturn(HexRaysPopupAction):
     """Toggle a return value on the current function."""
 
     description = "Add/Remove Return"
+    menu_path = "HexRaysPyTools/Function/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)
@@ -43,6 +45,7 @@ class RemoveArgument(HexRaysPopupAction):
     """Remove the selected argument from the function signature."""
 
     description = "Remove Argument"
+    menu_path = "HexRaysPyTools/Function/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)
