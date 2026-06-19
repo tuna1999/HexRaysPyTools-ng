@@ -68,3 +68,26 @@ def test_session_round_trip() -> None:
     # Caches persist across open()/close() (they're not reset)
     assert 0x1000 in s.imported_ea
     s.close()
+
+
+def test_session_open_initializes_recon_workspace() -> None:
+    """open() creates a real ReconWorkspace (mirrors the original init()'s
+    `cache.temporary_structure = TemporaryStructureModel()`).
+
+    Without this, scanner actions see ``self._session.recon is None``
+    and short-circuit with "no active session" warnings.
+    """
+    s = Session()
+    s.open()
+    assert s.recon is not None
+    # The ReconWorkspace pre-creates its own StructureModel.
+    assert s.recon.model is not None
+    assert s.recon.model.rowCount() == 0
+    assert s.recon.main_offset == 0
+
+
+def test_session_open_initializes_xref_storage() -> None:
+    """open() creates a real XrefStorage (mirrors the original ``XrefStorage().open()``)."""
+    s = Session()
+    s.open()
+    assert s.xrefs is not None

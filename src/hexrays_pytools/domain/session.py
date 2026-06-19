@@ -88,9 +88,25 @@ class Session:
         logger.debug("Caches initialized (consts populated)")
 
     def _init_workspaces(self) -> None:
-        """Lazy-init domain workspaces."""
-        # Real init happens in Phase 2 (recon, xrefs, templated modules)
-        # For now, just mark the slots.
-        self.recon = None
-        self.xrefs = None
+        """Initialize domain workspaces.
+
+        Mirrors the original plugin's init() flow:
+        ``cache.temporary_structure = TemporaryStructureModel()`` and
+        ``XrefStorage().open()`` — these were the two pieces of state
+        every scanner / event handler relied on. In the new design:
+        - ``ReconWorkspace`` pre-creates a :class:`StructureModel` so
+          scanner actions can write to it without first opening the
+          Structure Builder widget.
+        - ``XrefStorage`` is netnode-backed; ``open()`` loads any
+          existing data + auto-migrates the legacy array format.
+        """
+        from .recon.workspace import ReconWorkspace
+        from .xrefs.xref_storage import XrefStorage
+
+        self.recon = ReconWorkspace()
+        self.xrefs = XrefStorage()
+        self.xrefs.open()
+        # TemplatedTypes is the next module to wire (Phase 2.13). For
+        # now keep the slot None so the action registry doesn't break.
         self.templated = None
+        logger.debug("Workspaces initialized (recon + xrefs)")
