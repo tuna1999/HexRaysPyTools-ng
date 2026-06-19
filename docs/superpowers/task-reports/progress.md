@@ -49,3 +49,5 @@
 
 - **Task 5.9**: complete (gate verified: 270/270 tests, 86.59% coverage, mypy+ruff clean; tag `phase-5-ctree` created)
 - **Tasks 6.5+7.1-7.7 BATCHED**: complete (commits c4ee9da..dec054c; 270/270 tests, 86.59% coverage; CHANGELOG.md + ida-plugin.json + README + LICENSE + docs + tools/build_plugin.py + **v2.0.0 tag**; built ZIP: `dist/hexrays_pytools-2.0.0.zip`)
+
+- **POST-RELEASE FIX: IDA 9.x native crash**: complete (commit 69655eb; **CRITICAL**). Plugin crashed IDA at discovery time (native segfault). Root cause: `init`/`run`/`term` were `@classmethod`, but IDA 9.x's C++ dispatcher calls them via a SWIG virtual-method binding expecting an INSTANCE descriptor → descriptor mismatch → crash. Confirmed against 3 sources (2 official IDA 9.3 examples + working `rikugan` plugin). Fix: instance methods + per-instance state + `PLUGIN_ENTRY` function returning fresh instance. Added `test_init_run_term_are_instance_methods` regression guard. 271/271 tests, 86.59% coverage, mypy+ruff clean.
