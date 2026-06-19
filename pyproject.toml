@@ -62,6 +62,7 @@ omit = [
     "*/domain/actions/guess_allocation.py",
     "*/domain/actions/rename_action.py",
     "*/domain/actions/hx_events.py",
+    "*/domain/actions/form_requests.py",
     # The object-visitor hierarchy walks the live ctree via IDA's C++
     # ctree_parentee_t dispatch — mock_ida has no dispatch, so visit_expr /
     # leave_expr / _check_call / _recursive_process cannot be reached from
