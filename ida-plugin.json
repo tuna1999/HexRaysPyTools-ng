@@ -5,18 +5,18 @@
     "name": "hexrays_pytools",
     "entryPoint": "hexrays_pytools_entry.py",
     "version": "2.0.0",
-    "idaVersions": ["9.0", "9.1", "9.2"],
+    "idaVersions": ["9.0", "9.1", "9.2", "9.3"],
     "description": "Comprehensive toolkit for Hex-Rays decompiler: structure reconstruction, class/vtable management, code manipulation, and field cross-reference tracking.",
     "license": "MIT",
     "categories": ["ui-ux-and-visualization", "decompiler"],
     "pythonDependencies": [],
     "platforms": ["windows-x86_64", "linux-x86_64", "macos-aarch64"],
     "urls": {
-      "repository": "https://github.com/yourname/HexRaysPyTools"
+      "repository": "https://github.com/tuna1999/HexRaysPyTools"
     },
     "authors": [
-      {"name": "Original Authors", "email": "noreply@example.com"},
-      {"name": "Rewrite Maintainer", "email": "you@example.com"}
+      {"name": "igogo-x86"},
+      {"name": "tuna99"}
     ],
     "keywords": [
       "hex-rays", "decompiler", "ctree",
