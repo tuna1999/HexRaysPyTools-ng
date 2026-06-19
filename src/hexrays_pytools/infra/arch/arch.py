@@ -19,7 +19,7 @@ def is_code_ea(ea: int) -> bool:
 def get_ptr(ea: int) -> int:
     """Read a pointer (4 or 8 bytes) at `ea`, stripping ARM thumb bit."""
     flags = idaapi.get_full_flags(ea & ~1)
-    if idaapi.get_64bit():
+    if idaapi.inf_is_64bit():
         return int(idaapi.get_qword(ea & ~1)) if idaapi.is_data(flags) else int(idaapi.get_wide_dword(ea & ~1))
     return int(idaapi.get_wide_dword(ea & ~1))
 
@@ -89,9 +89,11 @@ def choose_virtual_func_address(
 def to_hex(ea: int) -> str:
     """Format `ea` as a clickable hex address for the IDA output window.
 
-    Mirrors the original `helper.to_hex`.
+    Mirrors the original `helper.to_hex`. Uses ``idaapi.inf_is_64bit()`` for
+    the global bitness check (the per-address ``idaapi.get_64bit(ea)``
+    requires an ``ea`` arg and would TypeError here).
     """
-    if idaapi.get_64bit():
+    if idaapi.inf_is_64bit():
         return f"0x{ea:016X}"
     return f"0x{ea:08X}"
 

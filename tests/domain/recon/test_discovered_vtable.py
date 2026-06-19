@@ -1,7 +1,7 @@
 """Test DiscoveredVTable and friends."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from hexrays_pytools.domain.recon.discovered_vtable import (
     DiscoveredVTable,
@@ -68,7 +68,7 @@ def test_import_to_structures_calls_create_type_with_declaration() -> None:
          ) as mock_create_type:
         mock_idc.get_wide_dword.side_effect = [0x500000, 0x500100, 0]
         mock_idaapi.is_code.return_value = True
-        mock_idaapi.get_64bit.return_value = False
+        mock_idaapi.inf_is_64bit.return_value = False  # 32-bit mode
         mock_idaapi.get_full_flags.return_value = 0
 
         result = v.import_to_structures(ask=False)

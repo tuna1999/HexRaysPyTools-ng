@@ -24,7 +24,7 @@ def test_is_code_ea_returns_bool() -> None:
 
 def test_get_ptr_x86_uses_wide_dword() -> None:
     """get_ptr on 32-bit IDA reads a wide dword."""
-    __import__("idaapi").get_64bit.return_value = False
+    __import__("idaapi").inf_is_64bit.return_value = False
     get_ptr(0x2000)
     __import__("idaapi").get_wide_dword.assert_called()
 
@@ -32,7 +32,7 @@ def test_get_ptr_x86_uses_wide_dword() -> None:
 def test_get_ptr_x64_uses_qword() -> None:
     """get_ptr on 64-bit IDA reads a qword for data, dword for code."""
     idaapi = __import__("idaapi")
-    idaapi.get_64bit.return_value = True
+    idaapi.inf_is_64bit.return_value = True
     idaapi.is_data.return_value = True
     get_ptr(0x2000)
     idaapi.get_qword.assert_called()
@@ -40,13 +40,13 @@ def test_get_ptr_x64_uses_qword() -> None:
 
 def test_to_hex_64bit() -> None:
     """to_hex formats as 16-digit hex on 64-bit IDA."""
-    __import__("idaapi").get_64bit.return_value = True
+    __import__("idaapi").inf_is_64bit.return_value = True
     assert to_hex(0xDEADBEEF) == "0x00000000DEADBEEF"
 
 
 def test_to_hex_32bit() -> None:
     """to_hex formats as 8-digit hex on 32-bit IDA."""
-    __import__("idaapi").get_64bit.return_value = False
+    __import__("idaapi").inf_is_64bit.return_value = False
     assert to_hex(0xDEADBEEF) == "0xDEADBEEF"
 
 

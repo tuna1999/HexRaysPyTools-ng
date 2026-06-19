@@ -81,14 +81,14 @@ class DiscoveredVTable(AbstractMember):
         entries: list[str] = []
         ea = int(getattr(self, "func_ea", 0)) or int(getattr(self, "ea", 0))
         # Void pointer — matches the original's `void*` field type.
-        ptr_size = 8 if idaapi.get_64bit() else 4
+        ptr_size = 8 if idaapi.inf_is_64bit() else 4
         # Discover the vtable length — read while ea is a code pointer.
         current_ea = ea
         max_entries = 256  # safety bound
         while len(entries) < max_entries:
             try:
                 ptr = int(idc.get_wide_dword(current_ea))
-            except (Exception,):  # noqa: BLE001 — defensive
+            except Exception:  # noqa: BLE001 — defensive
                 break
             if ptr == 0 or not idaapi.is_code(idaapi.get_full_flags(ptr & ~1)):
                 break
