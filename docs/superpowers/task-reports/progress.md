@@ -48,3 +48,4 @@
 - **Tasks 5.5-5.8 BATCHED**: complete (commits 1ee76a0..ba8bd10; 270 passed (full suite), 86.59% coverage; 4 action wrapper files wired to ctree logic; **B10 verified** in test: RenameMemberFromFunctionName=Ctrl+Alt+N)
 
 - **Task 5.9**: complete (gate verified: 270/270 tests, 86.59% coverage, mypy+ruff clean; tag `phase-5-ctree` created)
+- **Tasks 6.5+7.1-7.7 BATCHED**: complete (commits c4ee9da..dec054c; 270/270 tests, 86.59% coverage; CHANGELOG.md + ida-plugin.json + README + LICENSE + docs + tools/build_plugin.py + **v2.0.0 tag**; built ZIP: `dist/hexrays_pytools-2.0.0.zip`)

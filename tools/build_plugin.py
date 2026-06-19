@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "hexrays_pytools"
 DIST = ROOT / "dist"
-ENTRY_STUB = ROOT / "tools" / "hexrays_pytools_entry.py"
+ENTRY_FILE = ROOT / "hexrays_pytools_entry.py"
 
 
 def main() -> None:
@@ -18,7 +18,7 @@ def main() -> None:
     DIST.mkdir(exist_ok=True)
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(ROOT / "ida-plugin.json", "ida-plugin.json")
-        zf.write(ENTRY_STUB, "hexrays_pytools_entry.py")
+        zf.write(ENTRY_FILE, "hexrays_pytools_entry.py")
         zf.write(ROOT / "LICENSE", "LICENSE")
         zf.write(ROOT / "README.md", "README.md")
         for f in SRC.rglob("*"):
