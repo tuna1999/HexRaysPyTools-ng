@@ -2,9 +2,9 @@
 from unittest.mock import MagicMock
 
 from hexrays_pytools.domain.types.func_type import (
+    get_arg_name_and_type,
     get_call_argument_info,
     get_func_arg_name,
-    get_func_argument_info,
     set_func_arg_name,
     set_func_argument,
     set_func_return,
@@ -12,8 +12,8 @@ from hexrays_pytools.domain.types.func_type import (
 )
 
 
-def test_get_func_argument_info_returns_name_and_type() -> None:
-    """get_func_argument_info returns (name, type) for valid arg_index."""
+def test_get_arg_name_and_type_returns_name_and_type() -> None:
+    """get_arg_name_and_type returns (name, type) for valid arg_index."""
     idaapi = __import__("idaapi")
     func_tinfo = MagicMock()
     arg = MagicMock()
@@ -25,29 +25,29 @@ def test_get_func_argument_info_returns_name_and_type() -> None:
     func_tinfo.get_func_details.return_value = True
     idaapi.func_type_data_t.return_value = func_data
 
-    name, arg_type = get_func_argument_info(func_tinfo, 0)
+    name, arg_type = get_arg_name_and_type(func_tinfo, 0)
     assert name == "size"
 
 
-def test_get_func_argument_info_empty_when_get_func_details_fails() -> None:
-    """get_func_argument_info returns ("", empty) when get_func_details fails."""
+def test_get_arg_name_and_type_empty_when_get_func_details_fails() -> None:
+    """get_arg_name_and_type returns ("", empty) when get_func_details fails."""
     idaapi = __import__("idaapi")
     func_tinfo = MagicMock()
     func_tinfo.get_func_details.return_value = False
     idaapi.func_type_data_t.return_value = MagicMock()
-    name, arg_type = get_func_argument_info(func_tinfo, 0)
+    name, arg_type = get_arg_name_and_type(func_tinfo, 0)
     assert name == ""
 
 
-def test_get_func_argument_info_empty_when_index_out_of_range() -> None:
-    """get_func_argument_info returns ("", empty) when arg_index >= nargs."""
+def test_get_arg_name_and_type_empty_when_index_out_of_range() -> None:
+    """get_arg_name_and_type returns ("", empty) when arg_index >= nargs."""
     idaapi = __import__("idaapi")
     func_tinfo = MagicMock()
     func_data = MagicMock()
     func_data.__len__.return_value = 1
     func_tinfo.get_func_details.return_value = True
     idaapi.func_type_data_t.return_value = func_data
-    name, arg_type = get_func_argument_info(func_tinfo, 5)
+    name, arg_type = get_arg_name_and_type(func_tinfo, 5)
     assert name == ""
 
 

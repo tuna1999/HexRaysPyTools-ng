@@ -8,7 +8,7 @@ from __future__ import annotations
 import idaapi  # type: ignore[import-not-found]
 
 
-def get_func_argument_info(func_tinfo: idaapi.tinfo_t, arg_index: int) -> tuple[str, idaapi.tinfo_t]:
+def get_arg_name_and_type(func_tinfo: idaapi.tinfo_t, arg_index: int) -> tuple[str, idaapi.tinfo_t]:
     """Get (name, type) of the function argument at `arg_index`.
 
     Returns ("", empty tinfo) if the argument doesn't exist.
@@ -52,7 +52,7 @@ def get_call_argument_info(
     callee's function type (the call's `.x.type.get_nth_arg(idx)`); None if
     the callee has no declared arg at that index.
 
-    Mirrors the original `helper.get_func_argument_info(call, child)`.
+    Mirrors the original `helper.get_func_arg_name`.
     """
     arg_index = -1
     for i, arg in enumerate(call_expr.a):
