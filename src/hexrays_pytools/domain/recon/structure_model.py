@@ -91,6 +91,37 @@ class StructureModel(QtCore.QAbstractTableModel):
         self._items = []
         self.endResetModel()  # noqa: N802 - Qt API
 
+    def get_recognized_shape(self) -> Any:
+        """Build a UDT tinfo from the enabled items.
+
+        Returns ``None`` if the model is empty (nothing to recognize). The
+        resulting tinfo has one ``udm_t`` per enabled item, with offset/size
+        taken from the item and type taken from ``item.tinfo``.
+
+        Mirrors the original ``TemporaryStructureModel.get_recognized_shape``
+        shape-building logic. The original also walks the type library for
+        matching structures + shows a chooser; that interaction is left to
+        the StructureBuilder widget (out of scope for the model layer).
+        """
+        if not self._items:
+            return None
+        enabled = [m for m in self._items if m.enabled]
+        if not enabled:
+            return None
+        import idaapi  # type: ignore[import-not-found]
+
+        udt = idaapi.udt_type_data_t()
+        for item in enabled:
+            udm = idaapi.udm_t()
+            udm.offset = int(item.offset) * 8  # bytes → bits
+            udm.name = str(item.name)
+            udm.type = item.tinfo
+            udm.size = int(item.size) if item.tinfo is not None else 0
+            udt.push_back(udm)
+        tinfo = idaapi.tinfo_t()
+        tinfo.create_udt(udt, idaapi.BTF_STRUCT)
+        return tinfo
+
     @property
     def items(self) -> list[Any]:
         return list(self._items)

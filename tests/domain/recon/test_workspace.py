@@ -40,3 +40,24 @@ def test_workspace_clear_after_model() -> None:
     w.clear()
     assert w.is_empty() is True
     assert w.model is None
+
+
+def test_workspace_main_offset_default_zero() -> None:
+    """main_offset defaults to 0 (Phase A.7 — scanner engine reads this as origin)."""
+    w = ReconWorkspace()
+    assert w.main_offset == 0
+
+
+def test_workspace_main_offset_settable() -> None:
+    """main_offset can be set + read (used by StructureBuilder row click)."""
+    w = ReconWorkspace()
+    w.main_offset = 0x40
+    assert w.main_offset == 0x40
+
+
+def test_workspace_clear_resets_main_offset() -> None:
+    """clear() resets main_offset back to 0 (avoid stale origin on next session)."""
+    w = ReconWorkspace()
+    w.main_offset = 0x100
+    w.clear()
+    assert w.main_offset == 0

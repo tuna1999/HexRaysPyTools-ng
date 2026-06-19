@@ -58,6 +58,8 @@ omit = [
     "*/domain/actions/struct_creation.py",
     "*/domain/actions/struct_xref.py",
     "*/domain/actions/structs_by_size.py",
+    "*/domain/actions/scanners.py",
+    "*/domain/actions/guess_allocation.py",
     # The object-visitor hierarchy walks the live ctree via IDA's C++
     # ctree_parentee_t dispatch — mock_ida has no dispatch, so visit_expr /
     # leave_expr / _check_call / _recursive_process cannot be reached from

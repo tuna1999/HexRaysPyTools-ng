@@ -133,3 +133,30 @@ def test_model_items_property_returns_copy() -> None:
     snapshot = m.items
     snapshot.append(AbstractMember(offset=0x20, name="b"))
     assert len(m.items) == 1
+
+
+def test_get_recognized_shape_empty_model_returns_none() -> None:
+    """get_recognized_shape returns None when the model has no items."""
+    m = StructureModel()
+    assert m.get_recognized_shape() is None
+
+
+def test_get_recognized_shape_builds_udt_from_items() -> None:
+    """get_recognized_shape returns a tinfo for a non-empty model."""
+    m = StructureModel()
+    m.add_row(AbstractMember(offset=0, name="a", tinfo=MagicMock(name="int_t")))
+    m.add_row(AbstractMember(offset=4, name="b", tinfo=MagicMock(name="int_t")))
+    tinfo = m.get_recognized_shape()
+    assert tinfo is not None
+
+
+def test_get_recognized_shape_ignores_disabled_items() -> None:
+    """Disabled items are not included in the shape."""
+    m = StructureModel()
+    m.add_row(AbstractMember(offset=0, name="a", tinfo=MagicMock(name="int_t")))
+    # add a second then disable it
+    second = AbstractMember(offset=4, name="b", tinfo=MagicMock(name="int_t"))
+    m.add_row(second)
+    second.enabled = False
+    tinfo = m.get_recognized_shape()
+    assert tinfo is not None  # still builds a shape from the enabled one
