@@ -12,11 +12,22 @@ Dual-mode path resolution so the *same* file works in two layouts:
     while the package lives under ``src/hexrays_pytools/``. This is the
     layout used when symlinking/junctioning the repo directly into
     ``$IDAUSR/plugins/HexRaysPyTools/`` for live debugging.
+
+**Why the PySide6.QtGui import at module level**: IDA 9.3's
+``TWidgetToPySideWidget(tw, ctx=sys.modules['__main__'])`` looks up
+``ctx.QtGui.QWidget.FromCapsule(tw)`` from the ``__main__`` namespace.
+Without this import, the Structure Builder's ``OnCreate`` callback
+crashes with ``AttributeError: module '__main__' has no attribute 'QtGui'``.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+
+# Import QtGui into __main__'s namespace so IDA's PluginForm.FromCapsule
+# binding works. Must happen BEFORE PLUGIN_ENTRY is invoked (HCLI calls
+# it at load time).
+from PySide6 import QtGui  # noqa: F401  # imported for side-effect (binds to __main__)
 
 _HERE = Path(__file__).resolve().parent
 
@@ -41,4 +52,4 @@ if _pkg_parent_str not in sys.path:
 
 from hexrays_pytools.__main__ import PLUGIN_ENTRY  # noqa: E402  # type: ignore[import-untyped]
 
-__all__ = ["PLUGIN_ENTRY"]
+__all__ = ["PLUGIN_ENTRY", "QtGui"]
