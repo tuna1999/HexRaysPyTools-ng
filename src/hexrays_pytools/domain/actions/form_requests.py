@@ -48,8 +48,9 @@ class ShowGraph(Action):
             [int(sel) + 1 for sel in ctx.chooser_selection]
         )
         self.graph_view = StructureGraphViewer("Structure Graph", self.graph)
+        # IDA 9.x GraphViewer.Show takes a `caption` arg; older IDA didn't.
         if hasattr(self.graph_view, "Show"):
-            self.graph_view.Show()
+            self.graph_view.Show("Structure Graph")
         else:
             self.graph_view.Refresh()
 
@@ -74,7 +75,12 @@ class ShowClasses(Action):
             idaapi.activate_widget(tform, True)
         else:
             class_viewer = ClassViewer(ProxyModel(), TreeModel())
-            class_viewer.Show()
+            # IDA 9.x PluginForm.Show takes a `caption` arg.
+            if hasattr(class_viewer, "Show"):
+                class_viewer.Show("Classes")
+            else:
+                # Fallback: try anyway (older IDA may accept no args).
+                class_viewer.Show()
 
     def update(self, ctx: Any) -> int:
         return int(idaapi.AST_ENABLE_ALWAYS)
@@ -101,7 +107,12 @@ class ShowStructureBuilder(HexRaysPopupAction):
         model = None
         if self._session is not None and self._session.recon is not None:
             model = self._session.recon.model
-        StructureBuilder(model).Show()
+        # IDA 9.x PluginForm.Show takes a `caption` arg (older IDA didn't).
+        builder = StructureBuilder(model)
+        if hasattr(builder, "Show"):
+            builder.Show("Structure Builder")
+        else:
+            builder.Show()
 
     def check(self, hx_view: Any) -> bool:
         return True
