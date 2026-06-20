@@ -13,21 +13,33 @@ Dual-mode path resolution so the *same* file works in two layouts:
     layout used when symlinking/junctioning the repo directly into
     ``$IDAUSR/plugins/HexRaysPyTools/`` for live debugging.
 
-**Why the PySide6.QtGui import at module level**: IDA 9.3's
+**Why the PySide6.QtGui injection into ``__main__``**: IDA 9.3's
 ``TWidgetToPySideWidget(tw, ctx=sys.modules['__main__'])`` looks up
 ``ctx.QtGui.QWidget.FromCapsule(tw)`` from the ``__main__`` namespace.
-Without this import, the Structure Builder's ``OnCreate`` callback
-crashes with ``AttributeError: module '__main__' has no attribute 'QtGui'``.
+The entry stub is loaded into a synthetic ``__plugins__<name>`` namespace,
+NOT ``__main__`` — so just `from PySide6 import QtGui` here doesn't help.
+We must explicitly inject the binding into ``sys.modules['__main__']``
+so the PluginForm.FromCapsule lookup succeeds at widget-show time.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# Import QtGui into __main__'s namespace so IDA's PluginForm.FromCapsule
-# binding works. Must happen BEFORE PLUGIN_ENTRY is invoked (HCLI calls
-# it at load time).
-from PySide6 import QtGui  # noqa: F401  # imported for side-effect (binds to __main__)
+# Inject PySide6.QtGui into the __main__ namespace. This is the
+# SWiG-binding dance required by IDA 9.3's PluginForm.FromCapsule.
+# Must happen BEFORE PLUGIN_ENTRY is invoked (HCLI calls it at load time).
+try:
+    from PySide6 import QtGui  # type: ignore[import-not-found]
+
+    _main = sys.modules.get("__main__")
+    if _main is not None and not hasattr(_main, "QtGui"):
+        _main.QtGui = QtGui  # type: ignore[attr-defined]
+except ImportError:
+    # PySide6 not available — plugin will still load but form widgets
+    # won't work in real IDA. Tests run in a mock_ida environment that
+    # doesn't need this binding.
+    pass
 
 _HERE = Path(__file__).resolve().parent
 
@@ -52,4 +64,4 @@ if _pkg_parent_str not in sys.path:
 
 from hexrays_pytools.__main__ import PLUGIN_ENTRY  # noqa: E402  # type: ignore[import-untyped]
 
-__all__ = ["PLUGIN_ENTRY", "QtGui"]
+__all__ = ["PLUGIN_ENTRY"]
