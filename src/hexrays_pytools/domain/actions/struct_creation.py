@@ -151,9 +151,8 @@ class CreateNewField(HexRaysPopupAction):
         _, tp, fld = result
         tinfo = idaapi.tinfo_t()
         tinfo.deserialize(idaapi.get_idati(), tp, fld, None)
-        if arr_size:
-            if not tinfo.create_array(tinfo, int(arr_size)):
-                return None
+        if arr_size and not tinfo.create_array(tinfo, int(arr_size)):
+            return None
         return tinfo, field_name
 
 

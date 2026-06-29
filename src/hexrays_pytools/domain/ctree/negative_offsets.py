@@ -253,10 +253,10 @@ class SearchVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
             and expression.x.op == idaapi.cot_helper
             and len(expression.a) == 3
             and expression.x.helper == "CONTAINING_RECORD"
+            and expression.a[0].op == idaapi.cot_var
         ):
-            if expression.a[0].op == idaapi.cot_var:
-                idx = expression.a[0].v.idx
-                if expression.a[1].op == idaapi.cot_helper and expression.a[2].op == idaapi.cot_helper:
+            idx = expression.a[0].v.idx
+            if expression.a[1].op == idaapi.cot_helper and expression.a[2].op == idaapi.cot_helper:
                     parent_name = expression.a[1].helper
                     member_name = expression.a[2].helper
                     parent_tinfo = idaapi.tinfo_t()
@@ -295,8 +295,12 @@ class AnalyseVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
                         self.potential_negatives[idx] = NegativeLocalCandidate(
                             self.candidates[idx], number
                         )
-        elif expression.op == idaapi.cot_sub and expression.y.op == idaapi.cot_num:
-            if expression.x.op == idaapi.cot_var and expression.x.v.idx in self.candidates:
+        elif (
+            expression.op == idaapi.cot_sub
+            and expression.y.op == idaapi.cot_num
+            and expression.x.op == idaapi.cot_var
+            and expression.x.v.idx in self.candidates
+        ):
                 idx = expression.x.v.idx
                 number = -expression.y.numval()
                 if idx in self.potential_negatives:

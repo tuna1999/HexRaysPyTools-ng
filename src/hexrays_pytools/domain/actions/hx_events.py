@@ -212,7 +212,7 @@ class StructXrefCollectorVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         # batch.
         func_offset = int(self._function_address) - int(idaapi.get_imagebase())
         for ordinal, field_dict in self._result.items():
-            for field_offset, xref_list in field_dict.items():
+            for _field_offset, xref_list in field_dict.items():
                 # Pack the per-field list with its offset as a marker
                 # (the new XrefStorage stores the list verbatim).
                 self._storage.update(int(ordinal), func_offset, list(xref_list))

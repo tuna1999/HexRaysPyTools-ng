@@ -6,6 +6,8 @@ from typing import Any
 import idaapi  # type: ignore[import-not-found]
 from PySide6 import QtWidgets
 
+from ..widgets_common import form_to_pyside_widget
+
 
 class ClassViewer(idaapi.PluginForm):  # type: ignore[misc]
     """Dock form for the class browser tree view."""
@@ -17,7 +19,7 @@ class ClassViewer(idaapi.PluginForm):  # type: ignore[misc]
         self.parent: QtWidgets.QWidget | None = None  # noqa: N806
 
     def OnCreate(self, form: Any) -> None:  # noqa: N802, N806
-        self.parent = self.FormToPySideWidget(form)
+        self.parent = form_to_pyside_widget(form)
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -37,9 +39,4 @@ class ClassViewer(idaapi.PluginForm):  # type: ignore[misc]
     def _on_filter_changed(self, text: str) -> None:
         if hasattr(self.proxy_model, "set_regexp_filter"):
             self.proxy_model.set_regexp_filter(text)
-
-    @staticmethod
-    def FormToPySideWidget(form: Any) -> QtWidgets.QWidget:  # noqa: N802, N806
-        widget: QtWidgets.QWidget = idaapi.PluginForm.FormToPySideWidget(form)
-        return widget
 

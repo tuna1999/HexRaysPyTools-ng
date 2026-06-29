@@ -28,7 +28,7 @@ from ..ctree import rename as engine
 from .action import HexRaysPopupAction
 
 if TYPE_CHECKING:
-    from ..session import Session
+    pass
 
 logger = logging.getLogger(__name__)
 

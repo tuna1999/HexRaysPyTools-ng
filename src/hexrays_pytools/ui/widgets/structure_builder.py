@@ -6,6 +6,8 @@ from typing import Any
 import idaapi  # type: ignore[import-not-found]
 from PySide6 import QtWidgets
 
+from ..widgets_common import form_to_pyside_widget
+
 
 class StructureBuilder(idaapi.PluginForm):  # type: ignore[misc]
     """Dock form wrapping a Qt table view for the structure builder."""
@@ -16,7 +18,7 @@ class StructureBuilder(idaapi.PluginForm):  # type: ignore[misc]
         self.parent: QtWidgets.QWidget | None = None  # noqa: N806 - Qt naming
 
     def OnCreate(self, form: Any) -> None:  # noqa: N802, N806
-        self.parent = self.FormToPySideWidget(form)
+        self.parent = form_to_pyside_widget(form)
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -34,10 +36,4 @@ class StructureBuilder(idaapi.PluginForm):  # type: ignore[misc]
     def _on_finalize(self) -> None:
         if hasattr(self.structure_model, "finalize"):
             self.structure_model.finalize()
-
-    @staticmethod
-    def FormToPySideWidget(form: Any) -> QtWidgets.QWidget:  # noqa: N802, N806
-        """Convert IDA form HWND to PySide6 widget. FIX B1: was PyQt5."""
-        widget: QtWidgets.QWidget = idaapi.PluginForm.FormToPySideWidget(form)
-        return widget
 

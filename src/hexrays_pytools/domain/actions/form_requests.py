@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 import idaapi  # type: ignore[import-not-found]
 
-from ...domain.graph.structure_graph import StructureGraph
 from ...domain.browser.proxy_model import ProxyModel
 from ...domain.browser.tree_model import TreeModel
+from ...domain.graph.structure_graph import StructureGraph
 from ...ui.widgets.class_viewer import ClassViewer
 from ...ui.widgets.graph_viewer import StructureGraphViewer
 from ...ui.widgets.structure_builder import StructureBuilder

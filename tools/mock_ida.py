@@ -205,10 +205,24 @@ class _MockIdaModule:
     class PluginForm:  # noqa: N801 - keep IDA SWIG casing
         """Stand-in for idaapi.PluginForm.
 
-        The real PluginForm.FormToPySideWidget is a staticmethod; tests that
-        exercise OnCreate patch it at the class level, so no implementation
-        is needed here.
+        The real PluginForm exposes several ``staticmethod`` form-to-widget
+        converters. IDA 9.4's ``FormToPySideWidget`` is broken (it calls the
+        nonexistent ``ctx.QtGui.QWidget.FromCapsule``), so production code
+        routes through ``TWidgetToQtPythonWidget`` instead. Declaring these
+        two as named attributes here (rather than leaving the class empty)
+        means ``monkeypatch.setattr(idaapi.PluginForm, ...)`` does not raise
+        ``AttributeError ... has no attribute`` — pytest's default
+        ``raising=True`` would otherwise reject patches against names absent
+        from the mock class. The no-op defaults are never reached in tests
+        that patch them.
         """
+
+        @staticmethod
+        def TWidgetToQtPythonWidget(tw: Any, ctx: Any = None) -> Any:  # noqa: N802 - IDA SWIG casing
+            """No-op default; tests patch this to return a fake widget."""
+
+        # Alias mirroring IDA: this is the broken path production must avoid.
+        FormToPySideWidget = TWidgetToQtPythonWidget
 
     class GraphViewer:  # noqa: N801 - keep IDA SWIG casing
         """Stand-in for idaapi.GraphViewer.
