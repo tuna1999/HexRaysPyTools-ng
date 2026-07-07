@@ -34,7 +34,12 @@ from .domain.actions.hx_events import (
     StructXrefCollector,
 )
 from .domain.actions.registry import ActionRegistry
+from .domain.browser.proxy_model import ProxyModel
+from .domain.browser.tree_model import TreeModel
 from .domain.session import Session
+from .ui.widgets.class_viewer import ClassViewer
+from .ui.widgets.graph_viewer import StructureGraphViewer
+from .ui.widgets.structure_builder import StructureBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +70,13 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
 
         self.session = Session()
         self.session.open()
+
+        # F1.b: wire widget factories into Session. This is the only legal
+        # UI→domain wiring point in the 5-layer architecture. Domain actions
+        # call these factories instead of importing widget classes directly.
+        self.session.class_viewer_factory = lambda: ClassViewer(ProxyModel(), TreeModel())
+        self.session.structure_graph_viewer_factory = lambda graph: StructureGraphViewer("Structure Graph", graph)
+        self.session.structure_builder_factory = lambda workspace: StructureBuilder(workspace.model if workspace is not None else None)
 
         # Install the hx event dispatcher first — ActionRegistry needs it to
         # attach popup actions to hxe_populating_popup.

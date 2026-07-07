@@ -9,15 +9,15 @@ from typing import TYPE_CHECKING, Any
 
 import idaapi  # type: ignore[import-not-found]
 
-from ...domain.browser.proxy_model import ProxyModel
-from ...domain.browser.tree_model import TreeModel
 from ...domain.graph.structure_graph import StructureGraph
-from ...ui.widgets.class_viewer import ClassViewer
-from ...ui.widgets.graph_viewer import StructureGraphViewer
-from ...ui.widgets.structure_builder import StructureBuilder
 from .action import Action, HexRaysPopupAction
 
+# F1.b: widget classes no longer imported directly. Use session factories
+# (session.class_viewer_factory, etc.) wired by plugin.py. The TYPE_CHECKING
+# block below imports them for type hints only — not at runtime.
+
 if TYPE_CHECKING:
+    from ...ui.widgets.graph_viewer import StructureGraphViewer
     from ..session import Session
 
 
@@ -47,7 +47,10 @@ class ShowGraph(Action):
         self.graph = StructureGraph(
             [int(sel) + 1 for sel in ctx.chooser_selection]
         )
-        self.graph_view = StructureGraphViewer("Structure Graph", self.graph)
+        # F1.b: use session factory instead of direct widget import
+        if self._session is None or self._session.structure_graph_viewer_factory is None:
+            raise RuntimeError("structure_graph_viewer_factory not wired; plugin init incomplete")
+        self.graph_view = self._session.structure_graph_viewer_factory(self.graph)
         # IDA 9.x GraphViewer.Show takes a `caption` arg; older IDA didn't.
         if hasattr(self.graph_view, "Show"):
             self.graph_view.Show("Structure Graph")
@@ -74,7 +77,10 @@ class ShowClasses(Action):
         if tform:
             idaapi.activate_widget(tform, True)
         else:
-            class_viewer = ClassViewer(ProxyModel(), TreeModel())
+            # F1.b: use session factory instead of direct widget import
+            if self._session is None or self._session.class_viewer_factory is None:
+                raise RuntimeError("class_viewer_factory not wired; plugin init incomplete")
+            class_viewer = self._session.class_viewer_factory()
             # IDA 9.x PluginForm.Show takes a `caption` arg.
             if hasattr(class_viewer, "Show"):
                 class_viewer.Show("Classes")
@@ -101,14 +107,11 @@ class ShowStructureBuilder(HexRaysPopupAction):
         if tform:
             idaapi.activate_widget(tform, True)
             return
-        # No existing builder — open a new one backed by the session's
-        # workspace model. If no session/model, the widget handles None
-        # gracefully (or we create an empty one).
-        model = None
-        if self._session is not None and self._session.recon is not None:
-            model = self._session.recon.model
+        # F1.b: use session factory instead of direct widget import
+        if self._session is None or self._session.structure_builder_factory is None:
+            raise RuntimeError("structure_builder_factory not wired; plugin init incomplete")
+        builder = self._session.structure_builder_factory(self._session.recon)
         # IDA 9.x PluginForm.Show takes a `caption` arg (older IDA didn't).
-        builder = StructureBuilder(model)
         if hasattr(builder, "Show"):
             builder.Show("Structure Builder")
         else:

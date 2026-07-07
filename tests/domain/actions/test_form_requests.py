@@ -1,5 +1,5 @@
 """Test form_requests actions (ShowGraph, ShowClasses, ShowStructureBuilder)."""
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from hexrays_pytools.domain.actions.action import Action, HexRaysPopupAction
 from hexrays_pytools.domain.actions.form_requests import (
@@ -19,9 +19,13 @@ def test_show_graph_description_and_hotkey() -> None:
 
 
 def test_show_graph_instantiable_and_activates() -> None:
-    a = ShowGraph()
+    session = MagicMock()
+    session.structure_graph_viewer_factory = MagicMock(return_value=MagicMock())
+    a = ShowGraph(session=session)
     assert a.name == "HexRaysPyTools:ShowGraph"
-    a.activate(MagicMock())  # should not raise
+    ctx = MagicMock()
+    ctx.chooser_selection = [0]
+    a.activate(ctx)  # should not raise
 
 
 def test_show_graph_accepts_session() -> None:
@@ -37,7 +41,9 @@ def test_show_classes_is_action() -> None:
 
 
 def test_show_classes_instantiable_and_activates() -> None:
-    a = ShowClasses()
+    session = MagicMock()
+    session.class_viewer_factory = MagicMock(return_value=MagicMock())
+    a = ShowClasses(session=session)
     assert a.name == "HexRaysPyTools:ShowClasses"
     a.activate(MagicMock())
 
@@ -49,6 +55,117 @@ def test_show_structure_builder_is_popup_action() -> None:
 
 
 def test_show_structure_builder_check_returns_true() -> None:
-    a = ShowStructureBuilder()
+    session = MagicMock()
+    session.structure_builder_factory = MagicMock(return_value=MagicMock())
+    session.recon = MagicMock()
+    a = ShowStructureBuilder(session=session)
     assert a.check(MagicMock()) is True
     a.activate(MagicMock())  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# F1.b: widget factory wiring via Session
+# ---------------------------------------------------------------------------
+
+
+def test_session_has_widget_factory_fields() -> None:
+    """F1.b: Session must expose 3 widget factory fields."""
+    from hexrays_pytools.domain.session import Session
+
+    s = Session()
+    assert hasattr(s, "class_viewer_factory")
+    assert hasattr(s, "structure_graph_viewer_factory")
+    assert hasattr(s, "structure_builder_factory")
+    # Default None — plugin entry wires them after construction
+    assert s.class_viewer_factory is None
+    assert s.structure_graph_viewer_factory is None
+    assert s.structure_builder_factory is None
+
+
+def test_form_requests_uses_factory_not_direct_import() -> None:
+    """F1.b: form_requests.py must NOT directly import widget classes at runtime.
+
+    Imports are allowed inside ``TYPE_CHECKING`` for type hints — but not as
+    top-level runtime imports, which would re-introduce the domain→ui
+    upward dependency the F1.b fix removed.
+    """
+    import ast
+    import inspect
+
+    from hexrays_pytools.domain.actions import form_requests
+
+    tree = ast.parse(inspect.getsource(form_requests))
+    runtime_imports: list[str] = []
+    for node in tree.body:
+        # Top-level runtime imports only (skip ast.If blocks — those
+        # are TYPE_CHECKING-guarded and only run under mypy/pyright).
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.module.startswith("...ui.widgets")
+        ):
+            names = ", ".join(n.name for n in node.names)
+            runtime_imports.append(f"from {node.module} import {names}")
+    assert runtime_imports == [], (
+        "form_requests.py has runtime imports of UI widgets: "
+        f"{runtime_imports}. Use session factories instead."
+    )
+
+
+def test_show_classes_calls_class_viewer_factory() -> None:
+    """ShowClasses.activate uses session.class_viewer_factory."""
+    from hexrays_pytools.domain.actions.form_requests import ShowClasses
+
+    mock_factory = MagicMock(return_value=MagicMock())
+    session = MagicMock()
+    session.class_viewer_factory = mock_factory
+    a = ShowClasses(session=session)
+    with patch("hexrays_pytools.domain.actions.form_requests.idaapi.find_widget", return_value=None):
+        a.activate(MagicMock())
+    mock_factory.assert_called_once()
+
+
+def test_show_structure_builder_calls_factory() -> None:
+    """ShowStructureBuilder.activate uses session.structure_builder_factory."""
+    from hexrays_pytools.domain.actions.form_requests import ShowStructureBuilder
+
+    mock_factory = MagicMock(return_value=MagicMock())
+    session = MagicMock()
+    session.recon = MagicMock()
+    session.structure_builder_factory = mock_factory
+    a = ShowStructureBuilder(session=session)
+    with patch("hexrays_pytools.domain.actions.form_requests.idaapi.find_widget", return_value=None):
+        a.activate(MagicMock())
+    mock_factory.assert_called_once()
+
+
+def test_show_graph_uses_factory() -> None:
+    """ShowGraph.activate uses session.structure_graph_viewer_factory."""
+    from hexrays_pytools.domain.actions.form_requests import ShowGraph
+
+    mock_factory = MagicMock(return_value=MagicMock())
+    session = MagicMock()
+    session.structure_graph_viewer_factory = mock_factory
+    a = ShowGraph(session=session)
+    # Need a ctx with chooser_selection attribute
+    ctx = MagicMock()
+    ctx.chooser_selection = [0]
+    a.activate(ctx)
+    mock_factory.assert_called_once()
+
+
+def test_show_classes_raises_when_factory_not_wired() -> None:
+    """ShowClasses raises RuntimeError if class_viewer_factory is None."""
+    import pytest
+
+    from hexrays_pytools.domain.actions.form_requests import ShowClasses
+
+    session = MagicMock()
+    session.class_viewer_factory = None
+    a = ShowClasses(session=session)
+    # Mock idaapi.find_widget to return None so we exercise the factory branch
+    with (
+        patch("hexrays_pytools.domain.actions.form_requests.idaapi.find_widget", return_value=None),
+        pytest.raises(RuntimeError, match="class_viewer_factory not wired"),
+    ):
+        a.activate(MagicMock())

@@ -9,8 +9,9 @@ Lifecycle: `MyPlugin.init()` calls `session.open()`;
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .const import Consts
@@ -32,6 +33,14 @@ class Session:
     recon: ReconWorkspace | None = None
     xrefs: XrefStorage | None = None
     templated: TemplatedTypes | None = None
+
+    # Widget factories — wired by plugin entry (plugin.py) after Session is
+    # created. Domain actions call these factories instead of importing UI
+    # widgets directly. This is the ONLY legal UI→session wiring point in
+    # the 5-layer architecture (F1.b fix).
+    class_viewer_factory: Callable[[], Any] | None = None
+    structure_graph_viewer_factory: Callable[[Any], Any] | None = None
+    structure_builder_factory: Callable[[Any], Any] | None = None
 
     # IDA caches (replaces cache.py globals)
     imported_ea: set[int] = field(default_factory=set)
