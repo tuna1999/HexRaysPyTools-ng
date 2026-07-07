@@ -35,24 +35,30 @@ class ReconWorkspace:
     """
 
     def __init__(self) -> None:
-        # Pre-create an empty StructureModel so scanner actions work
-        # without first opening the Structure Builder widget. Mirrors
-        # the original plugin's behaviour where ``cache.temporary_structure``
-        # was a module-level singleton always present at session start.
-        self._model: StructureModel = _create_empty_model()
+        # F6: true lazy init — StructureModel (Qt-dependent) is constructed
+        # on first .model access, not at workspace init. This keeps
+        # Session.open() PySide6-free so unit tests can construct a
+        # ReconWorkspace without Qt available. Mirrors the original plugin's
+        # behavior where the model was always present at session start —
+        # scanner actions that check `workspace.model is None` still see a
+        # model after first access (and the property always returns one).
+        self._model: StructureModel | None = None
         # The primary struct offset the user is reconstructing. Scanners
-        # read this as the `origin` argument to SearchVisitor. Default 0
+        # read this as the `origin`` argument to SearchVisitor. Default 0
         # (no offset selected) — the StructureBuilder sets this on row click.
         self.main_offset: int = 0
 
     @property
-    def model(self) -> StructureModel | None:
+    def model(self) -> StructureModel:
         """The current structure model.
 
-        Returns ``None`` only if the model was never initialized AND the
-        ``_model`` attribute was forcibly deleted. In normal use this is
-        always a :class:`StructureModel` instance.
+        F6: lazy construction — first access builds an empty StructureModel,
+        subsequent accesses return the cached instance. Returns a fresh
+        StructureModel if `_model` was forcibly deleted (defensive). Always
+        returns a non-None StructureModel in normal use.
         """
+        if self._model is None:
+            self._model = _create_empty_model()
         return self._model
 
     def set_model(self, model: StructureModel) -> None:
@@ -84,11 +90,12 @@ class ReconWorkspace:
 
 
 def _create_empty_model() -> StructureModel:
-    """Build an empty :class:`StructureModel` (avoids circular import at module load).
+    """Build an empty :class:`StructureModel` (true lazy via property accessor).
 
     ``workspace`` is imported by ``structure_model`` in the Qt model code
     paths; importing the model class at the top of this file would create
-    a cycle. Local import keeps the module import graph clean.
+    a cycle. Local import keeps the module import graph clean AND keeps
+    PySide6 dependency out of ReconWorkspace.__init__ (F6).
     """
     from .structure_model import StructureModel
 

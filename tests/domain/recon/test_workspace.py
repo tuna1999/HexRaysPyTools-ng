@@ -1,6 +1,8 @@
 """Test ReconWorkspace skeleton."""
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from hexrays_pytools.domain.recon.workspace import ReconWorkspace
 
 
@@ -97,3 +99,38 @@ def test_workspace_is_empty_after_adding_then_clearing_item() -> None:
     assert w.is_empty() is False
     w.clear()
     assert w.is_empty() is True
+
+
+"""Tests for F6: lazy model in ReconWorkspace."""
+
+
+def test_workspace_init_does_not_import_structure_model() -> None:
+    """F6: ReconWorkspace() must not trigger PySide6 import at init time.
+
+    Pre-F6, __init__ called _create_empty_model() which imported
+    StructureModel → PySide6.QtCore. This forced Qt to be available even
+    for tests that only needed ReconWorkspace for non-UI purposes.
+    """
+    with patch("hexrays_pytools.domain.recon.structure_model.StructureModel") as mock_sm:
+        w = ReconWorkspace()
+        # StructureModel was NOT imported during __init__
+        mock_sm.assert_not_called()
+        # _model is None until first .model access
+        assert w._model is None
+
+
+def test_model_constructed_on_first_access() -> None:
+    """F6: first .model access triggers StructureModel construction."""
+    w = ReconWorkspace()
+    assert w._model is None  # not constructed yet
+    model = w.model  # first access triggers construction
+    assert w._model is model  # cached
+    assert w._model is not None
+
+
+def test_model_is_singleton_per_workspace() -> None:
+    """F6: subsequent .model accesses return cached instance."""
+    w = ReconWorkspace()
+    first = w.model
+    second = w.model
+    assert first is second
