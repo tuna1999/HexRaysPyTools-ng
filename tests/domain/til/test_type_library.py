@@ -49,8 +49,8 @@ def test_import_type_returns_none_on_failure() -> None:
 def test_choose_til_returns_none_on_cancel() -> None:
     """choose_til returns None when user cancels the chooser."""
     # Patch MyChoose in the namespace where choose_til looks it up.
-    # type_library binds the name via `from ...ui.chooser import MyChoose`,
-    # so the patch must target type_library's namespace (not ui.chooser's) to
+    # type_library binds the name via `from ...domain.chooser import MyChoose`,
+    # so the patch must target type_library's namespace (not domain.chooser's) to
     # take effect — see unittest.mock docs on "where to patch".
     import hexrays_pytools.domain.til.type_library as tl_mod
 

@@ -253,7 +253,7 @@ class _MockIdaModule:
             return self._nodes[node_id]
 
     class Choose:  # noqa: N801 - keep IDA SWIG casing
-        """Stand-in for idaapi.Choose so ui.chooser.MyChoose subclasses cleanly."""
+        """Stand-in for idaapi.Choose so domain.chooser.MyChoose subclasses cleanly."""
 
         # Common Choose flags referenced by production code.
         CH_MODAL: int = 0x00000001
