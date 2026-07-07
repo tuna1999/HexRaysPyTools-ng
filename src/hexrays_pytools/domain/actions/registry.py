@@ -129,9 +129,14 @@ class ActionRegistry:
             RenameMemberFromFunctionName, RenameUsingAssert, PropagateName,
             SelectContainingStructure, ResetContainingStructure,
         ]
-        # Sanity: count matches spec
+        # Sanity: count matches spec. Raise to prevent silent count drift —
+        # a refactor that forgets to add a class to both ACTION_CLASSES
+        # and _build_actions would otherwise ship without CI catching it.
         if len(all_classes) != 27:
-            logger.warning("Expected 27 action classes, found %d", len(all_classes))
+            raise RuntimeError(
+                f"ActionRegistry: expected 27 action classes, got {len(all_classes)}. "
+                "Did you forget to add a class to both ACTION_CLASSES and _build_actions?"
+            )
         # All classes accept optional session; pass it
         return [cls(self._session) for cls in all_classes]
 

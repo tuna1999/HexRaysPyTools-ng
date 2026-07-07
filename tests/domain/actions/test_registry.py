@@ -165,3 +165,19 @@ def test_popup_actions_not_attached_without_callback_manager() -> None:
     # Even if an external manager exists, the registry won't have attached.
     r._register_one(_PopupB())
     assert hx._handlers == {} or len(hx._handlers) == 0
+
+
+def test_registry_uses_raise_not_warning() -> None:
+    """The count mismatch check uses raise RuntimeError, not logger.warning.
+
+    F3: silent logger.warning was a reliability trap — a refactor that
+    forgot to add a class to both ACTION_CLASSES and _build_actions would
+    ship without CI catching it. RuntimeError fails loud.
+    """
+    import inspect
+
+    from hexrays_pytools.domain.actions.registry import ActionRegistry
+
+    source = inspect.getsource(ActionRegistry._build_actions)
+    assert "logger.warning" not in source
+    assert "raise RuntimeError" in source
