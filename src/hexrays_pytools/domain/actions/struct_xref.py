@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import idaapi  # type: ignore[import-not-found]
 import idc  # type: ignore[import-not-found]
 
-from ...ui.chooser import MyChoose
+from ..chooser import MyChoose
 from ..types.tinfo_utils import get_member_name, get_ordinal
 from ..xrefs.xref_storage import XrefStorage
 from .action import HexRaysXrefAction

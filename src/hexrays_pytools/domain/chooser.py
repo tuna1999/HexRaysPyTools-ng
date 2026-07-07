@@ -1,10 +1,17 @@
-"""UI chooser stubs.
+"""Reusable idaapi.Choose subclass for list selection UI.
 
-This module provides placeholder chooser classes until the full UI layer is
-implemented (planned for Task 3.5). The stubs subclass `idaapi.Choose` so they
-can be exercised under the mock_ida test infrastructure, and expose the
-minimum interface required by callers in the domain layer
-(`MyChoose.OnClose`, `OnGetLine`, `OnGetSize`, `Show`).
+Moved from `ui/chooser.py` to `domain/chooser.py` (F1.a) because it does not
+depend on Qt widgets — it's a thin wrapper around `idaapi.Choose`. This
+eliminates 5 upward imports from domain/ to ui/ that violated the 5-layer
+architecture rule.
+
+Lives in domain/ (not ui/) because:
+- No Qt dependency (just idaapi.Choose)
+- Used by domain actions (struct_xref, structs_by_size, guess_allocation,
+  negative_offsets, type_library) to display selection lists
+
+If a future change needs Qt widgets here, that should be a class extending
+this one in ui/, not this module.
 """
 from __future__ import annotations
 

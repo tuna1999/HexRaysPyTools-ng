@@ -20,7 +20,7 @@ from ...domain.scanner.scanned_object import (
 )
 from ...domain.scanner.visitor_base import RecursiveObjectUpwardsVisitor
 from ...infra.arch.arch import to_hex
-from ...ui.chooser import MyChoose
+from ..chooser import MyChoose
 from .action import HexRaysPopupAction
 
 if TYPE_CHECKING:

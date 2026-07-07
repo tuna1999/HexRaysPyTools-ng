@@ -18,7 +18,7 @@ from typing import Any
 
 import idaapi  # type: ignore[import-not-found]
 
-from ...ui.chooser import MyChoose
+from ..chooser import MyChoose
 from ..til.type_library import choose_til, import_type
 
 logger = logging.getLogger(__name__)

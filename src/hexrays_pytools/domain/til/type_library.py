@@ -14,7 +14,7 @@ from typing import Any
 import idaapi  # type: ignore[import-not-found]
 import idc  # type: ignore[import-not-found]
 
-from ...ui.chooser import MyChoose
+from ..chooser import MyChoose
 
 logger = logging.getLogger(__name__)
 
