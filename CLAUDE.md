@@ -55,7 +55,7 @@ Quy tắc bất di bất dịch: **không có import ngược lên layer trên**
 
 ## Vòng đời plugin
 
-`plugin.py:HexRaysPyToolsPlugin` (subclass `idaapi.plugin_t`) quản lý init/run/term. `Session` dataclass (`domain/session.py`) là container cho mọi state mutable, thay thế hoàn toàn biến toàn cục module-level từ bản gốc (B11).
+`plugin.py:HexRaysPyToolsPlugin` (subclass `idaapi.plugin_t`) quản lý init/run/term. `Session` dataclass (`domain/session.py`) là container cho mọi state mutable, thay thế hoàn toàn biến toàn cục module-level từ bản gốc.
 
 **Trình tự init** (`plugin.py:57`):
 1. `idaapi.init_hexrays_plugin()` — nếu fail trả `PLUGIN_SKIP`.
@@ -79,7 +79,7 @@ Ba quy tắc này đã từng gây native crash — được guard bởi `tests/
 
 Các nhóm action: 3 form-request (ShowGraph/Classes/StructureBuilder), 3 function-signature (ConvertToUsercall/AddRemoveReturn/RemoveArgument), 5 scanner (Shallow/Deep/RecognizeShape/DeepScanReturn/DeepScanFunctions), 4 struct (FindFieldXrefs/CreateNewField/CreateVtable/GetStructureBySize), 2 misc (GuessAllocation/SwapThenElse), 2 recast (Shift+L/R), 6 rename (Ctrl+N các loại), 2 containing-structure.
 
-**Quy ước hotkey quan trọng**: `RenameMemberFromFunctionName` dùng `Ctrl+Alt+N` (không phải `Ctrl+N` như bản gốc) để tránh đụng `RenameOther`. Đây là B10 fix, có thể gây tranh cãi với người dùng cũ.
+**Quy ước hotkey quan trọng**: `RenameMemberFromFunctionName` dùng `Ctrl+Alt+N` (không phải `Ctrl+N` như bản gốc) để tránh đụng `RenameOther`. Đây là hotkey collision fix, có thể gây tranh cãi với người dùng cũ.
 
 **Popup attachment**: Khi đăng ký một `HexRaysPopupAction` (subclass của `Action` có `menu_path`), `registry.py:152` tự động bọc nó trong `HexRaysPopupRequestHandler` và đăng ký cho `hxe_populating_popup`. Hotkey vẫn hoạt động nếu không làm bước này, nhưng action sẽ không xuất hiện trong menu chuột phải.
 
@@ -89,7 +89,7 @@ Các nhóm action: 3 form-request (ShowGraph/Classes/StructureBuilder), 3 functi
 
 ## Lưu trữ & Settings
 
-**Xref storage** dùng netnode (`infra/idb/netnode.py`) thay cho `idc.create_array` (B12). `XrefStorage` ở `domain/xrefs/xref_storage.py` tự động migrate dữ liệu từ array cũ `$HexRaysPyTools-ng:XrefStorage` sang netnode mới `$hexrays_pytools_ng/xref_storage` trên first load.
+**Xref storage** dùng netnode (`infra/idb/netnode.py`) thay cho `idc.create_array`. `XrefStorage` ở `domain/xrefs/xref_storage.py` tự động migrate dữ liệu từ array cũ `$HexRaysPyTools-ng:XrefStorage` sang netnode mới `$hexrays_pytools_ng/xref_storage` trên first load.
 
 **Settings** (5 cái) đọc qua `ida_settings.get_current_plugin_setting` trong `domain/settings.py`, map vào `Session`. Khai báo trong `ida-plugin.json` dưới `plugin.settings`. Set qua `hcli plugin config`, không sửa file `.cfg` như v1.x.
 
