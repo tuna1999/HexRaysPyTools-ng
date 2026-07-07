@@ -3,10 +3,11 @@
 Replaces `cache.temporary_structure` global from the original plugin.
 
 The workspace owns:
-- ``model`` — the Qt :class:`StructureModel`. **Always non-None** — a fresh
-  empty model is created in ``__init__`` so scanner actions can write to it
-  without first opening the Structure Builder. The Structure Builder binds
-  to the same model.
+- ``model`` — the Qt :class:`StructureModel`. Built **lazily** on first
+  access via the ``model`` property; ``__init__`` does not touch Qt.
+  Scanner actions and the Structure Builder both receive a non-None
+  model by the time they use it. The Structure Builder binds to the
+  same model.
 - ``main_offset`` — the struct offset the user is currently reconstructing;
   every scanner reads it as the ``origin`` argument to ``SearchVisitor``.
 - the ``StructureBuilder`` widget (when opened).
@@ -82,7 +83,7 @@ class ReconWorkspace:
         """Return True if the model has no items (or no model at all).
 
         ``empty`` is checked against items, not model existence — the model
-        is always present after :class:`ReconWorkspace` is constructed.
+        is always present after first ``.model`` access.
         """
         if self._model is None:
             return True
