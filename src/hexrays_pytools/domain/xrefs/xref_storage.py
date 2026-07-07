@@ -71,7 +71,9 @@ class XrefStorage:
                 chunks.append(idc.get_array_element(idc.AR_STR, array_id, i))
             raw = b"".join(chunks).decode("utf-8", errors="replace")
             old = json.loads(raw)
-            # Merge: legacy takes precedence for matching ordinals
+            # Merge: netnode wins on (ord, func_off) conflicts. If the user
+            # already has stored xrefs in the new format, legacy data is
+            # dropped for matching keys (setdefault + membership check).
             for ord_key, funcs in old.items():
                 ord_key = int(ord_key)
                 self._storage.setdefault(ord_key, {})
@@ -79,7 +81,13 @@ class XrefStorage:
                     func_off = int(func_off)
                     if func_off not in self._storage[ord_key]:
                         self._storage[ord_key][func_off] = fields
-            # Delete old array after successful migration
+            # F2 fix: flush merged data to netnode BEFORE deleting the legacy
+            # array. A crash between delete and flush would lose user xref
+            # data irrecoverably; flushing first ensures at worst the user
+            # ends up with both legacy and netnode copies (next open will
+            # re-run migration with netnode winning on conflict).
+            self.flush()
+            # Only now safe to delete the legacy array.
             idc.delete_array(array_id)
         except (ImportError, AttributeError, ValueError, TypeError) as e:
             logger.debug("Legacy xref storage migration skipped: %s", e)
