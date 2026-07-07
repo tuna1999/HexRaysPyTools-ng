@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from .actions.hx_callback import HxCallbackManager
     from .const import Consts
     from .recon.workspace import ReconWorkspace
     from .templated.templated_types import TemplatedTypes
@@ -33,6 +34,10 @@ class Session:
     recon: ReconWorkspace | None = None
     xrefs: XrefStorage | None = None
     templated: TemplatedTypes | None = None
+
+    # HxCallbackManager reference (set by plugin.init() after construction).
+    # Used by recent_callback_errors property (F4).
+    hx_callbacks: HxCallbackManager | None = None
 
     # Widget factories — wired by plugin entry (plugin.py) after Session is
     # created. Domain actions call these factories instead of importing UI
@@ -75,6 +80,18 @@ class Session:
             self.xrefs.flush()
         self.is_open = False
         logger.info("Session closed")
+
+    @property
+    def recent_callback_errors(self) -> list[tuple[int, Exception]]:
+        """Last 10 errors from HxCallbackManager (read-only snapshot).
+
+        F4: surfaces silent handler failures. UI code can poll this to render
+        status bar warning / log action. Returns empty list if hx_callbacks
+        not yet wired (e.g. before plugin.init() completes).
+        """
+        if self.hx_callbacks is None:
+            return []
+        return list(self.hx_callbacks.errors[-10:])
 
     def _load_settings(self) -> None:
         """Load settings from HCLI ida-settings into session fields."""

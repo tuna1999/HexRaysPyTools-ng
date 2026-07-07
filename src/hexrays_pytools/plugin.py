@@ -82,6 +82,9 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
         # attach popup actions to hxe_populating_popup.
         self.hx_callbacks = HxCallbackManager()
         self.hx_callbacks.install()
+        # F4: share hx_callbacks reference with Session for error visibility.
+        if self.session is not None:
+            self.session.hx_callbacks = self.hx_callbacks
         self.hx_callbacks.register(
             int(idaapi.hxe_double_click),
             MemberDoubleClick(self.session),

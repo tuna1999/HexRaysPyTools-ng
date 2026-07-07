@@ -62,3 +62,45 @@ def test_detach_all_clears() -> None:
     m.detach_all()
     assert m._handlers == {}
     assert m._installed is False
+
+
+def test_dispatch_records_handler_exception() -> None:
+    """F4: handler exceptions are recorded in manager.errors."""
+    m = HxCallbackManager()
+    bad = MagicMock()
+    bad.handle.side_effect = ValueError("boom")
+    m.register(idaapi.hxe_maturity, bad)
+    m._dispatch(idaapi.hxe_maturity)
+    assert len(m.errors) == 1
+    event_id, exc = m.errors[0]
+    assert event_id == idaapi.hxe_maturity
+    assert isinstance(exc, ValueError)
+    assert str(exc) == "boom"
+
+
+def test_session_recent_callback_errors_property() -> None:
+    """F4: Session exposes recent_callback_errors property."""
+    from hexrays_pytools.domain.session import Session
+
+    s = Session()
+    # No hx_callbacks wired yet — property returns empty list
+    assert s.recent_callback_errors == []
+
+
+def test_session_recent_callback_errors_caps_at_ten() -> None:
+    """F4: Session.recent_callback_errors caps to most recent 10 errors."""
+    from hexrays_pytools.domain.actions.hx_callback import HxCallbackManager
+    from hexrays_pytools.domain.session import Session
+
+    s = Session()
+    m = HxCallbackManager()
+    s.hx_callbacks = m
+
+    bad = MagicMock()
+    bad.handle.side_effect = RuntimeError("err")
+    m.register(idaapi.hxe_maturity, bad)
+    for _ in range(15):
+        m._dispatch(idaapi.hxe_maturity)
+    # manager.errors has 15 entries; property returns last 10
+    assert len(m.errors) == 15
+    assert len(s.recent_callback_errors) == 10

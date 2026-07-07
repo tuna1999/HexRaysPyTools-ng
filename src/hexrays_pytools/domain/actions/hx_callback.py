@@ -16,6 +16,10 @@ class HxCallbackManager:
     def __init__(self) -> None:
         self._handlers: dict = defaultdict(list)  # type: ignore[type-arg]
         self._installed = False
+        # F4: record last N exceptions from handlers. Read-only access via
+        # Session.recent_callback_errors. Helps surface silent handler failures
+        # to UI / status bar (rendering is follow-up scope).
+        self.errors: list[tuple[int, Exception]] = []  # F4: (event_id, exception) pairs
 
     def install(self) -> None:
         if self._installed:
@@ -31,8 +35,13 @@ class HxCallbackManager:
         for handler in self._handlers.get(event, []):
             try:
                 handler.handle(event, *args)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 — intentional swallow to prevent native crash
                 logger.exception("HxCallback handler failed: %s", e)
+                # F4: record exception for visibility (UI can poll via
+                # Session.recent_callback_errors). Keep last 100 to bound memory.
+                self.errors.append((event, e))
+                if len(self.errors) > 100:
+                    self.errors.pop(0)
         return 0
 
     def detach_all(self) -> None:
