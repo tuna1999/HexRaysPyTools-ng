@@ -18,9 +18,9 @@ from ...infra.idb.netnode import Netnode
 logger = logging.getLogger(__name__)
 
 # Old array name from the original plugin (for auto-migrate)
-OLD_ARRAY_NAME = "$HexRaysPyTools:XrefStorage"
+OLD_ARRAY_NAME = "$HexRaysPyTools-ng:XrefStorage"
 # New netnode name
-NODE_NAME = "$hexrays_pytools/xref_storage"
+NODE_NAME = "$hexrays_pytools_ng/xref_storage"
 
 
 class XrefStorage:

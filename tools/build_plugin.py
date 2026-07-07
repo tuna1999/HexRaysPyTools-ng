@@ -14,7 +14,7 @@ ENTRY_FILE = ROOT / "hexrays_pytools_entry.py"
 def main() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     version = pyproject["project"]["version"]
-    archive = DIST / f"hexrays_pytools-{version}.zip"
+    archive = DIST / f"hexrays_pytools_ng-{version}.zip"
     DIST.mkdir(exist_ok=True)
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(ROOT / "ida-plugin.json", "ida-plugin.json")

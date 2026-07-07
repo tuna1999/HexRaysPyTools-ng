@@ -1,7 +1,7 @@
 """IDA session-scoped tinfo singletons + type library constants.
 
 Ported from the original ``core/const.py``. The original plugin held these
-as module-level globals (B11 bug — re-initialized via ``const.init()`` at
+as module-level globals (re-initialized via ``const.init()`` at
 session open). Here they live on a :class:`Consts` dataclass owned by
 :class:`Session`, so the lifetime is explicit and the dataclass itself is
 pure data (testable in isolation).

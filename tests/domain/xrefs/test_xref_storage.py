@@ -41,4 +41,4 @@ def test_xref_storage_get_returns_empty_for_unknown() -> None:
 
 def test_old_array_name_constant() -> None:
     """OLD_ARRAY_NAME matches the original plugin's name (for migration)."""
-    assert OLD_ARRAY_NAME == "$HexRaysPyTools:XrefStorage"
+    assert OLD_ARRAY_NAME == "$HexRaysPyTools-ng:XrefStorage"

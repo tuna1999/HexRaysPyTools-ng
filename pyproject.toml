@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hexrays_pytools"
-version = "2.0.0"
+name = "hexrays_pytools_ng"
+version = "1.0.0"
 description = "Comprehensive toolkit for Hex-Rays decompiler"
 readme = "README.md"
 license = "MIT"

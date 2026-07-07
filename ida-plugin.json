@@ -2,9 +2,9 @@
   "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
-    "name": "hexrays_pytools",
+    "name": "hexrays_pytools_ng",
     "entryPoint": "hexrays_pytools_entry.py",
-    "version": "2.0.0",
+    "version": "1.0.0",
     "idaVersions": ["9.0", "9.1", "9.2", "9.3"],
     "description": "Comprehensive toolkit for Hex-Rays decompiler: structure reconstruction, class/vtable management, code manipulation, and field cross-reference tracking.",
     "license": "MIT",

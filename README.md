@@ -1,14 +1,14 @@
-# HexRaysPyTools
+# HexRaysPyTools-ng
 
 Comprehensive toolkit for IDA Pro's Hex-Rays decompiler: structure reconstruction, class/vtable management, code manipulation, and field cross-reference tracking.
 
 ## Installation
 
-The plugin is distributed as an HCLI archive. See [CHANGELOG.md](CHANGELOG.md) for the v2.0.0 release.
+The plugin is distributed as an HCLI archive.
 
 ```bash
-# After running tools/build_plugin.py to produce dist/hexrays_pytools-2.0.0.zip:
-hcli plugin install dist/hexrays_pytools-2.0.0.zip
+# After running tools/build_plugin.py to produce dist/hexrays_pytools_ng-1.0.0.zip:
+hcli plugin install dist/hexrays_pytools_ng-1.0.0.zip
 ```
 
 ## Requirements

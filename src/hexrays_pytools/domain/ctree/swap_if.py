@@ -9,7 +9,7 @@ Ported from the original `callbacks/swap_if.py` (186 LOC). Two halves:
     fall-through (the "spaghetti" readability transform).
   * **persistent storage** — the plugin remembers which ``if`` sites were
     swapped so the swap survives re-decompilation. The original used
-    ``idc.create_array`` (legacy); this port uses a netnode (B12 fix).
+    ``idc.create_array`` (legacy); this port uses a netnode instead.
 
 Everything operates on live Hex-Rays ctree objects, so this module is not
 unit-testable with mocks — it is verified by use in a real IDA.

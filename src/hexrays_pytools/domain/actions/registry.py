@@ -45,7 +45,8 @@ ACTION_CLASSES: tuple = (  # type: ignore[type-arg]
     # Recast (2)
     "RecastItemLeft",
     "RecastItemRight",
-    # Rename (6) — Note: RenameMemberFromFunctionName uses Ctrl+Alt+N (B10 fix)
+    # Rename (6) — Note: RenameMemberFromFunctionName uses Ctrl+Alt+N
+    # (not Ctrl+N) to avoid colliding with RenameOther's hotkey binding.
     "RenameOther",
     "RenameInside",
     "RenameOutside",
