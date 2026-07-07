@@ -120,9 +120,9 @@ class Session:
         ``cache.temporary_structure = TemporaryStructureModel()`` and
         ``XrefStorage().open()`` — these were the two pieces of state
         every scanner / event handler relied on. In the new design:
-        - ``ReconWorkspace`` pre-creates a :class:`StructureModel` so
-          scanner actions can write to it without first opening the
-          Structure Builder widget.
+        - ``ReconWorkspace`` lazily constructs its :class:`StructureModel`
+          on first ``.model`` access so scanner actions can write to it
+          without first opening the Structure Builder widget.
         - ``XrefStorage`` is netnode-backed; ``open()`` loads any
           existing data + auto-migrates the legacy array format.
         """

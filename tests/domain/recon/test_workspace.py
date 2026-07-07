@@ -10,7 +10,7 @@ def test_workspace_starts_empty() -> None:
     """A new ReconWorkspace has an empty model (rowCount=0)."""
     w = ReconWorkspace()
     assert w.is_empty() is True
-    assert w.model is not None  # always pre-created now
+    assert w.model is not None  # property constructs model lazily on first access
     assert w.model.rowCount() == 0
 
 
@@ -79,13 +79,15 @@ def test_workspace_clear_resets_main_offset() -> None:
 def test_scanner_action_no_model_warning_no_longer_fires() -> None:
     """Scanner actions no longer hit the 'no active workspace model' branch.
 
-    Pre-create model in __init__ was the fix — the workspace always has
-    a model, so the scanner check ``workspace.model is None`` is False
-    from the start (no warning logged).
+    The workspace exposes ``.model`` as a property that constructs an
+    empty :class:`StructureModel` lazily on first access, so the scanner
+    check ``workspace.model is None`` is False as soon as anything reads
+    the property (no warning logged).
     """
     w = ReconWorkspace()
-    # The pre-create ensures model is non-None — the scanner's
-    # `workspace.model is None` branch is unreachable for a healthy workspace.
+    # The lazy property ensures model is non-None on first access — the
+    # scanner's `workspace.model is None` branch is unreachable for a
+    # healthy workspace that has touched `.model` at least once.
     assert w.model is not None
     assert w.model is not None  # explicit re-check for clarity
 

@@ -105,7 +105,7 @@ Các file `domain/ctree/{recast,rename,swap_if,negative_offsets}.py` thao tác t
 ## Module phụ thuộc khác đáng biết
 
 - `domain/scanner/helpers.py` — `decompile_function` (guard `DecompilationFailure`) + `FunctionTouchVisitor` (pre-decompile callees để Hex-Rays cache arg types). KHÔNG bị omit, có unit test cho control flow.
-- `domain/recon/workspace.py:ReconWorkspace` pre-creates `StructureModel` rỗng trong `__init__` để scanner actions ghi được mà không cần mở Structure Builder widget trước.
+- `domain/recon/workspace.py:ReconWorkspace` lazily constructs `StructureModel` rỗng on first `.model` access (post-F6) để scanner actions ghi được mà không cần mở Structure Builder widget trước.
 - `domain/actions/swap_if_action.py` + `hx_events.py:SilentIfSwapper` dùng `SpaghettiVisitor`/`SwapThenElseVisitor` để tự động swap nhánh if-else.
 - `ui/widgets_common.py:form_to_pyside_widget` — IDA 9.4 workaround: `PluginForm.FormToPySideWidget` bị hỏng (tìm `QWidget` trong `QtGui` thay vì `QtWidgets`); dùng `TWidgetToQtPythonWidget` thay thế.
 
