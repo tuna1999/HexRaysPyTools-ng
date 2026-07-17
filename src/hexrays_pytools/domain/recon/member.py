@@ -15,6 +15,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+# C keywords that can never be a struct member name — used by
+# ``get_udt_member`` to avoid emitting invalid cdecl (e.g. ``_BYTE void;``).
+_C_KEYWORDS: frozenset[str] = frozenset({
+    "auto", "break", "case", "char", "const", "continue", "default", "do",
+    "double", "else", "enum", "extern", "float", "for", "goto", "if",
+    "int", "long", "register", "return", "short", "signed", "sizeof",
+    "static", "struct", "switch", "typedef", "union", "unsigned", "void",
+    "volatile", "while", "bool", "true", "false",
+})
+
 
 def _make_byte_tinfo() -> Any:
     """Build a ``_BYTE`` (unsigned byte) IDA tinfo, robust to API drift.
@@ -132,6 +142,18 @@ class AbstractMember:
         auto_name_re = _re.compile(r"(byte|(d|q|t|dq|)word|float|(d|dd)ouble)_")
         if auto_name_re.match(self.name or ""):
             operand = self.type_name.replace("[", "").replace("]", "").replace("*", "").strip()
+            udt_member.name = f"{operand}_{int(self.offset) - int(offset):x}"
+        elif not self.name or not str(self.name).isidentifier() or str(self.name) in _C_KEYWORDS:
+            # Bug fix (found by verification/verify_parity.py on IDA 9.4):
+            # VoidMember's default name is ``void`` — a C keyword. Emitting
+            # ``_BYTE void;`` into the pack cdecl makes IDA's parser reject
+            # the whole struct ("Syntax error near: }"). The v1 plugin never
+            # hit this because Member.__init__ always auto-named members
+            # ``byte_<offset>``; our dataclass keeps the display name "void"
+            # instead. Generate a positional name here the same way v1 did.
+            operand = self.type_name.replace("[", "").replace("]", "").replace("*", "").strip()
+            if not operand or not operand.isidentifier() or operand in _C_KEYWORDS:
+                operand = "byte"
             udt_member.name = f"{operand}_{int(self.offset) - int(offset):x}"
         else:
             udt_member.name = self.name
