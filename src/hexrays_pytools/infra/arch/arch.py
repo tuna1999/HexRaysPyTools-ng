@@ -3,6 +3,7 @@
 Replaces helper.py's `is_code_ea`, `get_ptr`, `get_funcs_calling_address`,
 and `to_hex` from the original plugin.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -20,7 +21,11 @@ def get_ptr(ea: int) -> int:
     """Read a pointer (4 or 8 bytes) at `ea`, stripping ARM thumb bit."""
     flags = idaapi.get_full_flags(ea & ~1)
     if idaapi.inf_is_64bit():
-        return int(idaapi.get_qword(ea & ~1)) if idaapi.is_data(flags) else int(idaapi.get_wide_dword(ea & ~1))
+        return (
+            int(idaapi.get_qword(ea & ~1))
+            if idaapi.is_data(flags)
+            else int(idaapi.get_wide_dword(ea & ~1))
+        )
     return int(idaapi.get_wide_dword(ea & ~1))
 
 
@@ -96,4 +101,3 @@ def to_hex(ea: int) -> str:
     if idaapi.inf_is_64bit():
         return f"0x{ea:016X}"
     return f"0x{ea:08X}"
-

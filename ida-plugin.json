@@ -5,41 +5,75 @@
     "name": "hexrays_pytools_ng",
     "entryPoint": "hexrays_pytools_entry.py",
     "version": "1.0.0",
-    "idaVersions": ["9.0", "9.1", "9.2", "9.3"],
+    "idaVersions": ["9.0", "9.1", "9.2", "9.3", "9.4"],
     "description": "Comprehensive toolkit for Hex-Rays decompiler: structure reconstruction, class/vtable management, code manipulation, and field cross-reference tracking.",
     "license": "MIT",
-    "categories": ["ui-ux-and-visualization", "decompiler"],
+    "categories": ["ui-ux-and-visualization", "decompilation"],
     "pythonDependencies": [],
     "platforms": ["windows-x86_64", "linux-x86_64", "macos-aarch64"],
     "urls": {
-      "repository": "https://github.com/tuna1999/HexRaysPyTools"
+      "repository": "https://github.com/tuna1999/HexRaysPyTools-ng"
     },
     "authors": [
-      {"name": "igogo-x86"},
-      {"name": "tuna99"}
+      { "name": "igogo-x86", "email": "igogo-x86@example.com" },
+      { "name": "tuna99", "email": "tuna99@example.com" }
     ],
     "keywords": [
-      "hex-rays", "decompiler", "ctree",
-      "structure-reconstruction", "class-reconstruction",
-      "vtable", "reverse-engineering"
+      "hex-rays",
+      "decompiler",
+      "ctree",
+      "structure-reconstruction",
+      "class-reconstruction",
+      "vtable",
+      "reverse-engineering"
     ],
     "settings": [
-      {"key": "log_level", "type": "string", "required": false, "default": "INFO",
-       "name": "Log Level", "choices": ["DEBUG", "INFO", "WARNING", "ERROR"],
-       "documentation": "Python logging level.", "prompt": true},
-      {"key": "propagate_through_all_names", "type": "boolean", "required": false, "default": false,
-       "name": "Propagate Through All Names",
-       "documentation": "If true, Name Propagation visits all names; otherwise only default names.", "prompt": true},
-      {"key": "store_xrefs", "type": "boolean", "required": false, "default": true,
-       "name": "Store Cross-References",
-       "documentation": "Persist struct field xrefs in the IDB between sessions.", "prompt": true},
-      {"key": "scan_any_type", "type": "boolean", "required": false, "default": false,
-       "name": "Scan Any Variable Type",
-       "documentation": "Allow scanning of variables of any type; otherwise only basic types.", "prompt": true},
-      {"key": "templated_types_file", "type": "string", "required": false, "default": "",
-       "name": "Custom Templated Types TOML",
-       "documentation": "Absolute path to a TOML file with C++ templated types. Empty uses bundled default.",
-       "prompt": false}
+      {
+        "key": "log_level",
+        "type": "string",
+        "required": true,
+        "default": "DEBUG",
+        "name": "Log Level",
+        "choices": ["DEBUG", "INFO", "WARNING", "ERROR"],
+        "documentation": "Python logging level.",
+        "prompt": true
+      },
+      {
+        "key": "propagate_through_all_names",
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "name": "Propagate Through All Names",
+        "documentation": "If true, Name Propagation visits all names; otherwise only default names.",
+        "prompt": true
+      },
+      {
+        "key": "store_xrefs",
+        "type": "boolean",
+        "required": false,
+        "default": true,
+        "name": "Store Cross-References",
+        "documentation": "Persist struct field xrefs in the IDB between sessions.",
+        "prompt": true
+      },
+      {
+        "key": "scan_any_type",
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "name": "Scan Any Variable Type",
+        "documentation": "Allow scanning of variables of any type; otherwise only basic types.",
+        "prompt": true
+      },
+      {
+        "key": "templated_types_file",
+        "type": "string",
+        "required": false,
+        "default": "",
+        "name": "Custom Templated Types TOML",
+        "documentation": "Absolute path to a TOML file with C++ templated types. Empty uses bundled default.",
+        "prompt": false
+      }
     ]
   }
 }

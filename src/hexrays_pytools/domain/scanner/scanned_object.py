@@ -21,6 +21,7 @@ The ``SO_*`` constants here are the canonical identifiers — both
 ``ScannedObject.create`` and ``is_legal_type`` checks depend on their numeric
 values. Renumbering them would break saved netnode state.
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,13 +36,13 @@ logger = logging.getLogger(__name__)
 
 # Object-kind constants. The numeric values are part of the on-disk contract
 # (they may be stored in netnodes from earlier versions). DO NOT renumber.
-SO_LOCAL_VARIABLE = 1       # cexpr.op == idaapi.cot_var
-SO_STRUCT_POINTER = 2       # cexpr.op == idaapi.cot_memptr
-SO_STRUCT_REFERENCE = 3     # cexpr.op == idaapi.cot_memref
-SO_GLOBAL_OBJECT = 4        # cexpr.op == idaapi.cot_obj
-SO_CALL_ARGUMENT = 5        # cexpr.op == idaapi.cot_call
-SO_MEMORY_ALLOCATOR = 6     # matches malloc/operator new
-SO_RETURNED_OBJECT = 7      # matches the return value of a function
+SO_LOCAL_VARIABLE = 1  # cexpr.op == idaapi.cot_var
+SO_STRUCT_POINTER = 2  # cexpr.op == idaapi.cot_memptr
+SO_STRUCT_REFERENCE = 3  # cexpr.op == idaapi.cot_memref
+SO_GLOBAL_OBJECT = 4  # cexpr.op == idaapi.cot_obj
+SO_CALL_ARGUMENT = 5  # cexpr.op == idaapi.cot_call
+SO_MEMORY_ALLOCATOR = 6  # matches malloc/operator new
+SO_RETURNED_OBJECT = 7  # matches the return value of a function
 
 
 class ScanObject:
@@ -217,10 +218,7 @@ class GlobalVariableObject(ScanObject):
         self.id = SO_GLOBAL_OBJECT
 
     def is_target(self, cexpr: Any) -> bool:
-        return (
-            int(cexpr.op) == int(idaapi.cot_obj)
-            and self.obj_ea == int(cexpr.obj_ea)
-        )
+        return int(cexpr.op) == int(idaapi.cot_obj) and self.obj_ea == int(cexpr.obj_ea)
 
 
 class CallArgObject(ScanObject):
@@ -242,10 +240,7 @@ class CallArgObject(ScanObject):
         self.id = SO_CALL_ARGUMENT
 
     def is_target(self, cexpr: Any) -> bool:
-        return (
-            int(cexpr.op) == int(idaapi.cot_call)
-            and int(cexpr.x.obj_ea) == self.func_ea
-        )
+        return int(cexpr.op) == int(idaapi.cot_call) and int(cexpr.x.obj_ea) == self.func_ea
 
     def create_scan_obj(self, cfunc: Any, cexpr: Any) -> ScanObject | None:
         """Drill through cast/ref/add/sub/idx to the underlying expression.
@@ -287,10 +282,7 @@ class ReturnedObject(ScanObject):
         self.id = SO_RETURNED_OBJECT
 
     def is_target(self, cexpr: Any) -> bool:
-        return (
-            int(cexpr.op) == int(idaapi.cot_call)
-            and int(cexpr.x.obj_ea) == self._func_ea
-        )
+        return int(cexpr.op) == int(idaapi.cot_call) and int(cexpr.x.obj_ea) == self._func_ea
 
 
 class MemoryAllocationObject(ScanObject):
@@ -377,9 +369,7 @@ class ScannedObject:
         self.expression_address = int(expression_address)
         # func_ea is derived from the expression address via the active
         # function list. Mirrors `idc.get_func_attr(ea, FUNCATTR_START)`.
-        self.func_ea = int(
-            idc.get_func_attr(int(expression_address), idc.FUNCATTR_START)
-        )
+        self.func_ea = int(idc.get_func_attr(int(expression_address), idc.FUNCATTR_START))
         self.origin = int(origin)
         self._applicable = bool(applicable)
 
@@ -411,9 +401,7 @@ class ScannedObject:
                 int(obj.ea), obj.name, expression_address, origin, applicable
             )
         if obj.id == SO_LOCAL_VARIABLE:
-            return ScannedVariableObject(
-                obj.lvar, obj.name, expression_address, origin, applicable
-            )
+            return ScannedVariableObject(obj.lvar, obj.name, expression_address, origin, applicable)
         if obj.id in (SO_STRUCT_REFERENCE, SO_STRUCT_POINTER):
             return ScannedStructureMemberObject(
                 obj.struct_name,
@@ -506,9 +494,7 @@ class ScannedVariableObject(ScannedObject):
 
         hx_view = idaapi.open_pseudocode(int(self.func_ea), -1)
         if hx_view is None:
-            logger.warning(
-                "Failed to open pseudocode for func %s", to_hex(int(self.func_ea))
-            )
+            logger.warning("Failed to open pseudocode for func %s", to_hex(int(self.func_ea)))
             return
         try:
             lvars = list(hx_view.cfunc.get_lvars())
@@ -521,13 +507,15 @@ class ScannedVariableObject(ScannedObject):
             if match is not None:
                 logger.debug(
                     "Applying tinfo to %s in %s",
-                    str(self.name), self.function_name,
+                    str(self.name),
+                    self.function_name,
                 )
                 hx_view.set_lvar_type(match, tinfo)
             else:
                 logger.warning(
                     "Failed to find previously scanned local variable %s from %s",
-                    str(self.name), to_hex(int(self.expression_address)),
+                    str(self.name),
+                    to_hex(int(self.expression_address)),
                 )
         finally:
             # The pseudocode window we opened is borrowed — don't close it,

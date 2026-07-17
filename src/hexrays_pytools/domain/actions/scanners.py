@@ -5,6 +5,7 @@ These wire the 5 scanner actions to the :class:`SearchVisitor` engine
 via idat headless; these tests cover the Python-level wiring (object
 construction, dispatch by citype, etc.).
 """
+
 from __future__ import annotations
 
 import logging
@@ -153,9 +154,7 @@ class RecognizeShape(Scanner):
         fresh_workspace.set_model(StructureModel())
         # origin=0 for RecognizeShape — the recognized shape starts at
         # the scanned offset, not the user's main_offset.
-        visitor = NewShallowSearchVisitor(
-            cfunc, 0, obj, fresh_workspace, consts=self._consts()
-        )
+        visitor = NewShallowSearchVisitor(cfunc, 0, obj, fresh_workspace, consts=self._consts())
         visitor.process()
         assert fresh_workspace.model is not None
         tinfo = fresh_workspace.model.get_recognized_shape()

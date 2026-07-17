@@ -3,6 +3,7 @@
 Replaces `core/templated_types.py`. Loads C++ templated type definitions
 from a TOML file (default: bundled, custom: from session.templated_types_file).
 """
+
 from __future__ import annotations
 
 import logging
@@ -59,6 +60,35 @@ class TemplatedTypes:
         types = self._types[key].get("types", [])
         # Narrow to list[str]; TOML values are Any but the schema guarantees a list.
         return list(types)
+
+    def get_struct(self, key: str) -> str | None:
+        """Get the unrendered struct body template string for ``key``.
+
+        Mirrors the original ``TemplatedTypes.get_struct`` accessor.
+        Returns ``None`` if the key isn't registered.
+        """
+        if key not in self._types:
+            return None
+        return str(self._types[key].get("struct", ""))
+
+    def get_base_name(self, key: str) -> str | None:
+        """Get the unrendered base-name template string for ``key``.
+
+        Mirrors the original ``TemplatedTypes.get_base_name`` accessor.
+        Returns ``None`` if the key isn't registered.
+        """
+        if key not in self._types:
+            return None
+        return str(self._types[key].get("base_name", ""))
+
+    def set_file_path(self, path: str) -> None:
+        """Switch to a custom TOML file and reload.
+
+        Mirrors the original ``TemplatedTypes.set_file_path`` — used by
+        the Structure Builder's "Open Templated Types TOML" button.
+        """
+        self._path = Path(path) if path else _BUNDLED_PATH
+        self.reload_types()
 
     @property
     def keys(self) -> list[str]:

@@ -8,6 +8,7 @@ Netnode API:
 - Blob storage: `.supstr(idx)` get, `.supset(idx, str)` set
 - Integer storage: `.altval(idx)` get, `.altset(idx, val)` set
 """
+
 from __future__ import annotations
 
 import idaapi  # type: ignore[import-not-found]

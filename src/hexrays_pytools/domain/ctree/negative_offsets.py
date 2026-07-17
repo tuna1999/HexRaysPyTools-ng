@@ -10,6 +10,7 @@ rewrites matching accesses into ``CONTAINING_RECORD(addr, TYPE, FIELD)``.
 Everything operates on live Hex-Rays ctree objects, so this module is not
 unit-testable with mocks.
 """
+
 from __future__ import annotations
 
 import logging
@@ -193,7 +194,9 @@ class ReplaceVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         negative_lvar = self.negative_lvars[idx]
         logger.debug(
             "Creating CONTAINING_RECORD: offset=%s negative_offset=%s TYPE=%s",
-            negative_lvar.offset, offset, negative_lvar.parent_tinfo.dstr(),
+            negative_lvar.offset,
+            offset,
+            negative_lvar.parent_tinfo.dstr(),
         )
 
         arg_address = idaapi.carg_t()
@@ -257,21 +260,23 @@ class SearchVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         ):
             idx = expression.a[0].v.idx
             if expression.a[1].op == idaapi.cot_helper and expression.a[2].op == idaapi.cot_helper:
-                    parent_name = expression.a[1].helper
-                    member_name = expression.a[2].helper
-                    parent_tinfo = idaapi.tinfo_t()
-                    if not parent_tinfo.get_named_type(idaapi.get_idati(), parent_name):
-                        return 0
-                    udt_data = idaapi.udt_type_data_t()
-                    parent_tinfo.get_udt_details(udt_data)
-                    matches = [x for x in udt_data if x.name == member_name]
-                    if matches:
-                        tinfo = matches[0].type
-                        self.result[idx] = NegativeLocalInfo(
-                            tinfo, parent_tinfo,
-                            int(matches[0].offset) // 8, member_name,
-                        )
-                        return 1
+                parent_name = expression.a[1].helper
+                member_name = expression.a[2].helper
+                parent_tinfo = idaapi.tinfo_t()
+                if not parent_tinfo.get_named_type(idaapi.get_idati(), parent_name):
+                    return 0
+                udt_data = idaapi.udt_type_data_t()
+                parent_tinfo.get_udt_details(udt_data)
+                matches = [x for x in udt_data if x.name == member_name]
+                if matches:
+                    tinfo = matches[0].type
+                    self.result[idx] = NegativeLocalInfo(
+                        tinfo,
+                        parent_tinfo,
+                        int(matches[0].offset) // 8,
+                        member_name,
+                    )
+                    return 1
         return 0
 
 
@@ -301,14 +306,12 @@ class AnalyseVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
             and expression.x.op == idaapi.cot_var
             and expression.x.v.idx in self.candidates
         ):
-                idx = expression.x.v.idx
-                number = -expression.y.numval()
-                if idx in self.potential_negatives:
-                    self.potential_negatives[idx].offsets.append(number)
-                else:
-                    self.potential_negatives[idx] = NegativeLocalCandidate(
-                        self.candidates[idx], number
-                    )
+            idx = expression.x.v.idx
+            number = -expression.y.numval()
+            if idx in self.potential_negatives:
+                self.potential_negatives[idx].offsets.append(number)
+            else:
+                self.potential_negatives[idx] = NegativeLocalCandidate(self.candidates[idx], number)
         return 0
 
 
@@ -334,10 +337,7 @@ def collect_potential_negatives(cfunc: Any) -> None:
     lvars = cfunc.get_lvars()
     for idx in range(len(lvars)):
         parsed = _parse_magic_comment(lvars[idx])
-        if (
-            parsed
-            and parsed.tinfo.equals_to(lvars[idx].type().get_pointed_object())
-        ):
+        if parsed and parsed.tinfo.equals_to(lvars[idx].type().get_pointed_object()):
             negative_lvars[idx] = parsed
 
     # Step 3: detect potential negatives among the remaining struct pointers

@@ -4,6 +4,7 @@ Replaces `core/structure_graph.py`. The original used `list` for visited
 sets during DFS (O(n²) membership check). This rewrite uses `set` for
 O(1) membership. Also fixes `logger.warn` → `logger.warning`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -57,11 +58,7 @@ class StructureGraph:
         `_calculate_edges` would record no edges for any pointer/array member.
         """
         while tinfo is not None and (tinfo.is_ptr() or tinfo.is_array()):
-            tinfo = (
-                tinfo.remove_ptr_or_array()
-                if hasattr(tinfo, "remove_ptr_or_array")
-                else None
-            )
+            tinfo = tinfo.remove_ptr_or_array() if hasattr(tinfo, "remove_ptr_or_array") else None
         if tinfo is None:
             return 0
         if tinfo.is_udt() or tinfo.is_enum():

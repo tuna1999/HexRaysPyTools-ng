@@ -3,6 +3,7 @@
 Replaces the side-effect import pattern in `callbacks/__init__.py`. All
 actions are explicitly listed here; no hidden side effects.
 """
+
 from __future__ import annotations
 
 import logging
@@ -116,18 +117,36 @@ class ActionRegistry:
         from .struct_xref import FindFieldXrefs
         from .structs_by_size import GetStructureBySize
         from .swap_if_action import SwapThenElse
+
         # All 27 classes in spec order
         all_classes = [
-            ShowGraph, ShowClasses, ShowStructureBuilder,
-            ConvertToUsercall, AddRemoveReturn, RemoveArgument,
-            ShallowScanVariable, DeepScanVariable, RecognizeShape,
-            DeepScanReturn, DeepScanFunctions,
-            FindFieldXrefs, CreateNewField, CreateVtable, GetStructureBySize,
-            GuessAllocation, SwapThenElse,
-            RecastItemLeft, RecastItemRight,
-            RenameOther, RenameInside, RenameOutside,
-            RenameMemberFromFunctionName, RenameUsingAssert, PropagateName,
-            SelectContainingStructure, ResetContainingStructure,
+            ShowGraph,
+            ShowClasses,
+            ShowStructureBuilder,
+            ConvertToUsercall,
+            AddRemoveReturn,
+            RemoveArgument,
+            ShallowScanVariable,
+            DeepScanVariable,
+            RecognizeShape,
+            DeepScanReturn,
+            DeepScanFunctions,
+            FindFieldXrefs,
+            CreateNewField,
+            CreateVtable,
+            GetStructureBySize,
+            GuessAllocation,
+            SwapThenElse,
+            RecastItemLeft,
+            RecastItemRight,
+            RenameOther,
+            RenameInside,
+            RenameOutside,
+            RenameMemberFromFunctionName,
+            RenameUsingAssert,
+            PropagateName,
+            SelectContainingStructure,
+            ResetContainingStructure,
         ]
         # Sanity: count matches spec. Raise to prevent silent count drift —
         # a refactor that forgets to add a class to both ACTION_CLASSES
@@ -144,7 +163,10 @@ class ActionRegistry:
         self._actions.append(action)
         idaapi.register_action(
             idaapi.action_desc_t(
-                action.name, action.description, action, action.hotkey,
+                action.name,
+                action.description,
+                action,
+                action.hotkey,
             )
         )
         # Attach popup actions to the Hex-Rays right-click menu. Each
@@ -155,6 +177,7 @@ class ActionRegistry:
         # up in the context menu. Without this, the action is registered
         # (hotkey works) but never appears in the menu.
         from .action import HexRaysPopupAction, HexRaysPopupRequestHandler
+
         if isinstance(action, HexRaysPopupAction) and self._hx_callbacks is not None:
             self._hx_callbacks.register(
                 int(idaapi.hxe_populating_popup),

@@ -23,6 +23,7 @@ All visitors operate on live Hex-Rays ctree objects — this module is not
 unit-testable end-to-end with mocks, so it is excluded from the coverage
 gate (``pyproject.toml``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,7 +69,9 @@ class ObjectVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         self._init_obj = obj
         self._data = data
         self._start_ea: int = int(obj.ea) if obj is not None else int(idaapi.BADADDR)
-        self._skip: bool = bool(skip_until_object) if self._start_ea != int(idaapi.BADADDR) else False
+        self._skip: bool = (
+            bool(skip_until_object) if self._start_ea != int(idaapi.BADADDR) else False
+        )
         self.crippled: bool = False
         # Default callback bound to the instance — set_callbacks can swap this.
         self._user_manipulate = self._default_manipulate
@@ -115,7 +118,8 @@ class ObjectVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         """Fallback manipulator: log the match and move on."""
         logger.debug(
             "ObjectVisitor default _manipulate: obj.id=%d expr.op=%d",
-            int(obj.id), int(cexpr.op),
+            int(obj.id),
+            int(cexpr.op),
         )
 
     def _is_initial_object(self, cexpr: Any) -> bool:
@@ -127,6 +131,7 @@ class ObjectVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         variations (e.g. the user clicked the LHS of an assignment).
         """
         from .ctree_utils import find_asm_address
+
         return (
             self._init_obj.is_target(cexpr)
             and find_asm_address(cexpr, self.parents) == self._start_ea
@@ -157,7 +162,9 @@ class ObjectDownwardsVisitor(ObjectVisitor):
     the matched expression.
     """
 
-    def __init__(self, cfunc: Any, obj: Any, data: Any = None, skip_until_object: bool = False) -> None:
+    def __init__(
+        self, cfunc: Any, obj: Any, data: Any = None, skip_until_object: bool = False
+    ) -> None:
         super().__init__(cfunc, obj, data, skip_until_object)
         # CV_POST makes IDA call leave_expr after every expression's children
         # are processed. We need both visit_expr (to extend the tracked set)
@@ -242,7 +249,9 @@ class ObjectUpwardsVisitor(ObjectVisitor):
     STAGE_PREPARE = 1
     STAGE_PARSING = 2
 
-    def __init__(self, cfunc: Any, obj: Any, data: Any = None, skip_after_object: bool = False) -> None:
+    def __init__(
+        self, cfunc: Any, obj: Any, data: Any = None, skip_after_object: bool = False
+    ) -> None:
         super().__init__(cfunc, obj, data, skip_after_object)
         self._stage: int = self.STAGE_PREPARE
         self._tree: dict[Any, set[Any]] = {}
@@ -470,9 +479,8 @@ class RecursiveObjectVisitor(ObjectVisitor):
         b = self._cfunc.body.cblock
         if b.size() == 1:
             e = b.at(0)
-            return (
-                int(e.op) == int(idaapi.cit_return)
-                or (int(e.op) == int(idaapi.cit_expr) and int(e.cexpr.op) == int(idaapi.cot_call))
+            return int(e.op) == int(idaapi.cit_return) or (
+                int(e.op) == int(idaapi.cit_expr) and int(e.cexpr.op) == int(idaapi.cot_call)
             )
         return False
 
@@ -547,9 +555,7 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
             cfunc = decompile_function(func_ea)
             if cfunc is not None:
                 lvars = list(cfunc.get_lvars())
-                assert arg_idx < len(lvars), (
-                    f"Wrong argument at func {to_hex(func_ea)}"
-                )
+                assert arg_idx < len(lvars), f"Wrong argument at func {to_hex(func_ea)}"
                 obj = VariableObject(lvars[arg_idx], arg_idx)
                 self.prepare_new_scan(cfunc, arg_idx, obj)
                 self._recursive_process()

@@ -3,6 +3,7 @@
 Ported from the original `callbacks/new_field_creation.py` (137 LOC) and
 `callbacks/virtual_table_creation.py` (34 LOC).
 """
+
 from __future__ import annotations
 
 import logging
@@ -100,9 +101,7 @@ class CreateNewField(HexRaysPopupAction):
         gap_size = int(udt_member.size) // 8
         gap_leftover = gap_size - idx - field_size
         if gap_leftover < 0:
-            logger.error(
-                "Too big size for the field. Max %d bytes", gap_size - idx
-            )
+            logger.error("Too big size for the field. Max %d bytes", gap_size - idx)
             return
 
         it = udt_data.find(udt_member)
@@ -125,9 +124,7 @@ class CreateNewField(HexRaysPopupAction):
             udt_data.insert(it, create_padding_udt_member(offset, idx))
 
         struct_tinfo.create_udt(udt_data, idaapi.BTF_STRUCT)
-        struct_tinfo.set_numbered_type(
-            idaapi.get_idati(), ordinal, idaapi.BTF_STRUCT, struct_name
-        )
+        struct_tinfo.set_numbered_type(idaapi.get_idati(), ordinal, idaapi.BTF_STRUCT, struct_name)
         hx_view.refresh_view(True)
 
     @staticmethod
@@ -136,8 +133,7 @@ class CreateNewField(HexRaysPopupAction):
         m = re.search(r"^(\w+[ *]+)(\w+)(\[(\d+)\])?$", declaration)
         if m is None:
             logger.error(
-                "Member declaration should be like `TYPE_NAME NAME[SIZE]` "
-                "(array is optional)"
+                "Member declaration should be like `TYPE_NAME NAME[SIZE]` (array is optional)"
             )
             return None
         type_name, field_name, _, arr_size = m.groups()

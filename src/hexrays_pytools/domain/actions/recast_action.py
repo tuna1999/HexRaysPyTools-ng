@@ -5,6 +5,7 @@ These wrap the ctree recast engine in ``domain/ctree/recast.py``:
   * Left (Shift+L) — recast the **target** side of an assignment / return / call.
   * Right (Shift+R) — recast the **source** side of a cast.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

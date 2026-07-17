@@ -16,6 +16,7 @@ Lifecycle: ``Session.open`` creates a :class:`ReconWorkspace` and assigns it
 to ``Session.recon``. The Structure Builder widget, when opened, calls
 ``set_model()`` to replace the model (rare — kept for API symmetry).
 """
+
 from __future__ import annotations
 
 import logging

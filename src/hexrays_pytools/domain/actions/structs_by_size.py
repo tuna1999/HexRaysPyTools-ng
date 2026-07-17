@@ -4,6 +4,7 @@ Ported from the original `callbacks/structs_by_size.py` (77 LOC). Right-click
 on a number literal → list library structs of that size → render the literal
 as ``sizeof(StructName)`` and import the type.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -30,9 +31,7 @@ def _choose_structure_by_size(size: int) -> int | None:
         tinfo.create_typedef(selected_library, ordinal)
         if tinfo.get_size() == size:
             name = str(tinfo.dstr())
-            description = str(
-                idaapi.print_tinfo(None, 0, 0, idaapi.PRTYPE_DEF, tinfo, None, None)
-            )
+            description = str(idaapi.print_tinfo(None, 0, 0, idaapi.PRTYPE_DEF, tinfo, None, None))
             matched_types.append([str(ordinal), name, description])
 
     chooser = MyChoose(
@@ -66,9 +65,7 @@ class GetStructureBySize(HexRaysPopupAction):
         if hx_view is None:
             return False
         item = hx_view.item
-        return bool(
-            item.citype == idaapi.VDI_EXPR and item.e.op == idaapi.cot_num
-        )
+        return bool(item.citype == idaapi.VDI_EXPR and item.e.op == idaapi.cot_num)
 
     def activate(self, ctx: Any) -> None:
         hx_view = idaapi.get_widget_vdui(ctx.widget)
@@ -93,9 +90,7 @@ class GetStructureBySize(HexRaysPopupAction):
 
         c_function = hx_view.cfunc
         number_formats = c_function.numforms
-        operand_locator = idaapi.operand_locator_t(
-            ea, ord(operand_number) if operand_number else 0
-        )
+        operand_locator = idaapi.operand_locator_t(ea, ord(operand_number) if operand_number else 0)
         if operand_locator in number_formats:
             del number_formats[operand_locator]
         number_formats[operand_locator] = number_format_new

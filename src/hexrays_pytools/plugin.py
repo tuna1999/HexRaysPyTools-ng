@@ -20,6 +20,7 @@ IDA 9.x contract (confirmed against IDA 9.3 official examples
 
 All mutable state lives on the instance, not module globals.
 """
+
 from __future__ import annotations
 
 import logging
@@ -75,8 +76,12 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
         # UI→domain wiring point in the 5-layer architecture. Domain actions
         # call these factories instead of importing widget classes directly.
         self.session.class_viewer_factory = lambda: ClassViewer(ProxyModel(), TreeModel())
-        self.session.structure_graph_viewer_factory = lambda graph: StructureGraphViewer("Structure Graph", graph)
-        self.session.structure_builder_factory = lambda workspace: StructureBuilder(workspace.model if workspace is not None else None)
+        self.session.structure_graph_viewer_factory = lambda graph: StructureGraphViewer(
+            "Structure Graph", graph
+        )
+        self.session.structure_builder_factory = lambda workspace: StructureBuilder(
+            workspace.model if workspace is not None else None
+        )
 
         # Install the hx event dispatcher first — ActionRegistry needs it to
         # attach popup actions to hxe_populating_popup.

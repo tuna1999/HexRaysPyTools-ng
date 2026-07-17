@@ -5,6 +5,7 @@ Note: the actual `hxe_double_click` navigation logic lives in the
 so a hotkey-triggered variant can be registered separately if needed; it is
 not part of the 27-action registry.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

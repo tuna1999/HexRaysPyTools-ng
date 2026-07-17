@@ -1,4 +1,5 @@
 """Manage hxe_* (Hex-Rays decompiler) callbacks."""
+
 from __future__ import annotations
 
 import logging

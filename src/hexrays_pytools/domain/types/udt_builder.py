@@ -5,6 +5,7 @@ a udt_type_data_t ready to be applied to a Local Type.
 
 Extracted from the original `core/temporary_structure.py:pack()` method.
 """
+
 from __future__ import annotations
 
 import idaapi  # type: ignore[import-not-found]

@@ -6,6 +6,7 @@ fallback platform check. The rewrite uses `idaapi.enable_numbered_types`
 if the IDA 9.x SDK exposes it; otherwise logs a warning and skips the
 numbering (graceful degradation).
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,10 @@ def choose_til() -> tuple[Any, ...] | None:
     chooser = MyChoose(
         [[x[1], x[2]] for x in libs],
         "Select Library",
-        [["Library", 10 | idaapi.Choose.CHCOL_PLAIN], ["Description", 30 | idaapi.Choose.CHCOL_PLAIN]],
+        [
+            ["Library", 10 | idaapi.Choose.CHCOL_PLAIN],
+            ["Description", 30 | idaapi.Choose.CHCOL_PLAIN],
+        ],
         69,
     )
     pick = chooser.Show(True)
@@ -45,7 +49,9 @@ def choose_til() -> tuple[Any, ...] | None:
         # Try to enable numbered types via the official API; if missing, log and skip.
         enable = getattr(idaapi, "enable_numbered_types", None)
         if enable is None:
-            logger.warning("idaapi.enable_numbered_types not available in this IDA version; skipping")
+            logger.warning(
+                "idaapi.enable_numbered_types not available in this IDA version; skipping"
+            )
             return selected, 0, pick == 0
         enable(selected, True)
         max_ord = idaapi.get_ordinal_count(selected)

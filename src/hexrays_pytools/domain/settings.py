@@ -4,6 +4,7 @@ Reads settings stored by the HCLI plugin installer into `ida_settings`,
 mapping them onto the Session dataclass. Replaces the original `.cfg` file
 parser in `settings.py`.
 """
+
 from __future__ import annotations
 
 import logging

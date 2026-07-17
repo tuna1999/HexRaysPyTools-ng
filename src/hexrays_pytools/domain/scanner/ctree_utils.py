@@ -2,6 +2,7 @@
 
 Extracted from `core/helper.py:find_asm_address` and `api.py:parent walker`.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -26,4 +27,3 @@ def find_asm_address(cexpr: Any, parents: Any = None) -> int:
     while cexpr and cexpr.ea == idaapi.BADADDR:
         return int(idaapi.BADADDR)
     return int(cexpr.ea) if cexpr else int(idaapi.BADADDR)
-

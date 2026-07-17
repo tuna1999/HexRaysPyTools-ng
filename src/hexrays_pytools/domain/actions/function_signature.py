@@ -4,6 +4,7 @@ Ported from the original `callbacks/function_signature_modifiers.py` (91 LOC).
 These operate on the current function's ``func_type_data_t`` and re-apply the
 modified type via ``apply_tinfo``.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

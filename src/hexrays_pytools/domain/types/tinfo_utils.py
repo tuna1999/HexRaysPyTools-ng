@@ -4,6 +4,7 @@ Extracted from the original `core/helper.py` so other modules can mock
 the IDA API in tests. Pure functions where possible; IDA-coupled where
 unavoidable.
 """
+
 from __future__ import annotations
 
 import logging
@@ -73,9 +74,7 @@ def is_legal_type(tinfo: idaapi.tinfo_t) -> bool:
         return False
     if tinfo.is_ptr() and tinfo.get_pointed_object().is_forward_decl():
         is_bad_size = tinfo.get_pointed_object().get_size() == idaapi.BADSIZE
-        logger.debug(
-            "Type %s is forward declaration: %s", str(tinfo.dstr()), is_bad_size
-        )
+        logger.debug("Type %s is forward declaration: %s", str(tinfo.dstr()), is_bad_size)
         return not is_bad_size
     if tinfo.is_unknown():
         logger.debug("Type %s is unknown", str(tinfo.dstr()))

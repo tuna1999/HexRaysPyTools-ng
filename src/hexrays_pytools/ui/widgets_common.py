@@ -4,6 +4,7 @@ These helpers isolate IDA-version-specific quirks of wrapping an IDA form
 handle (``TWidget*``) into a PySide6 ``QWidget`` so the individual widget
 modules stay small and version-agnostic.
 """
+
 from __future__ import annotations
 
 from typing import Any, cast

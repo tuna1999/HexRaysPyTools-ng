@@ -6,6 +6,7 @@ class retained for naming parity with the design spec's
 `actions/virtual_table.py` mapping; it is functionally identical to
 `CreateVtable` and is not part of the 27-action registry.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

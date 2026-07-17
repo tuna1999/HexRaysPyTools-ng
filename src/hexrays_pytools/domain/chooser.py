@@ -13,6 +13,7 @@ Lives in domain/ (not ui/) because:
 If a future change needs Qt widgets here, that should be a class extending
 this one in ui/, not this module.
 """
+
 from __future__ import annotations
 
 from typing import Any

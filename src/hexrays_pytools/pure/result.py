@@ -3,6 +3,7 @@
 Use `Result.ok(value)` for success and `Result.err(error)` for failure.
 Avoids exception-based control flow for expected errors.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ class Result(Generic[T, E]):
             ...
             return Result.ok(tinfo)
     """
+
     is_ok: bool
     value: T | None
     error: E | None

@@ -93,6 +93,27 @@ Các nhóm action: 3 form-request (ShowGraph/Classes/StructureBuilder), 3 functi
 
 **Settings** (5 cái) đọc qua `ida_settings.get_current_plugin_setting` trong `domain/settings.py`, map vào `Session`. Khai báo trong `ida-plugin.json` dưới `plugin.settings`. Set qua `hcli plugin config`, không sửa file `.cfg` như v1.x.
 
+## Logging & debug scanner
+
+`logging_setup.py` cấu hình root logger trong `plugin.py:init()` qua `setup_logging(session.log_level)`. Trong IDA thật, log ghi thẳng **IDA Output window** qua `IdaOutputHandler` (gọi `idaapi.msg`); môi trường test/mock fallback về `StreamHandler`. Mọi record có prefix `[HexRaysPyTools]` để lọc dễ trong Output window.
+
+Scanner trace nằm ở cấp **DEBUG** (mặc định `INFO` — output sạch). Để debug khi scan "chưa đúng":
+
+```bash
+# Bật trace scanner (rồi reload plugin trong IDA: Ctrl+Shift+P → reload, hoặc restart IDA)
+hcli plugin config hexrays_pytools_ng log_level DEBUG
+
+# Scan (phím F / Shift+Alt+F / Recognize Shape) → mở Output window → xem trace:
+#   [HexRaysPyTools][DEBUG] ShallowScanVariable: start func=0x401000 obj='arg0' type=void* origin=0
+#   [HexRaysPyTools][DEBUG]   created member offset=8 tinfo=int* scanned={arg0}
+#   [HexRaysPyTools][DEBUG] ShallowScanVariable: done func=0x401000 +2 member(s) (total 2)
+
+# Tắt khi xong:
+hcli plugin config hexrays_pytools_ng log_level INFO
+```
+
+Các điểm trace DEBUG: mỗi `activate()` trong `scanners.py` (start/done + số members thu được); `member_extractor._manipulate`/`_get_member` (nhánh DiscoveredVTable/funcptr/VoidMember/Member + offset); `_extract_member_*` (dynamic offset → skip); `visitor_base._recursive_process` (recurse INTO callee/caller, skip imported/decompile-fail); scan-tree dump ở cuối recursive scan.
+
 ## Ctree walking — không mock được
 
 Các file `domain/ctree/{recast,rename,swap_if,negative_offsets}.py` thao tác trực tiếp trên live Hex-Rays ctree object (`citem_t`, `cexpr_t`). Mock của `tools/mock_ida.py` không reproduce được dispatch của `ctree_parentee_t`, nên:

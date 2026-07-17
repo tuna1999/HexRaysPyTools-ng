@@ -14,6 +14,7 @@ Ported from the original `callbacks/swap_if.py` (186 LOC). Two halves:
 Everything operates on live Hex-Rays ctree objects, so this module is not
 unit-testable with mocks — it is verified by use in a real IDA.
 """
+
 from __future__ import annotations
 
 import logging

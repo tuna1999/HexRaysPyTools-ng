@@ -1,4 +1,5 @@
 """Base classes for actions (right-click menu + hotkey)."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -87,6 +88,4 @@ class HexRaysPopupRequestHandler:
             # The 4th arg (popuppath) groups the action into a submenu.
             # "HexRaysPyTools/" (trailing slash) creates a "HexRaysPyTools"
             # submenu; "HexRaysPyTools/Rename/" nests a "Rename" submenu.
-            idaapi.attach_action_to_popup(
-                form, popup, self._action.name, self._action.menu_path
-            )
+            idaapi.attach_action_to_popup(form, popup, self._action.name, self._action.menu_path)

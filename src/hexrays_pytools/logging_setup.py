@@ -3,6 +3,7 @@
 Replaces the original `logging.basicConfig(...)` call in `PLUGIN_ENTRY`.
 Use `setup_logging(level)` once during plugin init.
 """
+
 import logging
 
 _LOG_FORMAT = "[%(levelname)s] %(message)s\t(%(module)s:%(funcName)s)"

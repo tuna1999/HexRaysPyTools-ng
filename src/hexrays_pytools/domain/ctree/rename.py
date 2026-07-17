@@ -8,6 +8,7 @@ wired once that engine lands.
 Everything here operates on real Hex-Rays ctree objects obtained from a live
 ``vdui_t``, so this module is not unit-testable with mocks.
 """
+
 from __future__ import annotations
 
 import logging
@@ -111,6 +112,7 @@ def extract_rename_inside_info(cfunc: Any, ctree_item: Any) -> RenameInsideInfo 
     arg_index, _ = get_call_argument_info(parent, expression)
     func_tinfo = parent.x.type.get_pointed_object()
     from ..types.func_type import get_func_arg_name
+
     arg_name = get_func_arg_name(func_tinfo, arg_index)
     if arg_name is not None and _should_be_renamed(arg_name, lvar.name):
         return RenameInsideInfo(func_tinfo, int(parent.x.obj_ea), arg_index, lvar.name.lstrip("_"))
@@ -141,6 +143,7 @@ def extract_rename_outside_info(cfunc: Any, ctree_item: Any) -> RenameOtherInfo 
     arg_index, _ = get_call_argument_info(parent, expression)
     func_tinfo = parent.x.type.get_pointed_object()
     from ..types.func_type import get_func_arg_name
+
     arg_name = get_func_arg_name(func_tinfo, arg_index)
     if arg_name and _should_be_renamed(lvar.name, arg_name):
         return RenameOtherInfo(lvar, arg_name.lstrip("_"))
@@ -154,9 +157,7 @@ rename_outside = rename_other
 # --- RenameMemberFromFunctionName: infer member name from getter/setter ------
 
 
-def extract_member_from_func_info(
-    cfunc: Any, ctree_item: Any
-) -> MemberFromFuncInfo | None:
+def extract_member_from_func_info(cfunc: Any, ctree_item: Any) -> MemberFromFuncInfo | None:
     """`obj->member` → name the member after the enclosing function (m_xxx)."""
     if ctree_item.citype != idaapi.VDI_EXPR:
         return None
@@ -226,7 +227,8 @@ class _RenameUsingAssertVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
             new_name = self._possible_names.pop()
             logger.info(
                 "Renaming function at %s to `%s`",
-                to_hex(int(self._cfunc.entry_ea)), new_name,
+                to_hex(int(self._cfunc.entry_ea)),
+                new_name,
             )
             idc.set_name(self._cfunc.entry_ea, new_name)
         elif len(self._possible_names) > 1:
@@ -261,6 +263,7 @@ def _can_be_part_of_assert(cfunc: Any, ctree_item: Any) -> bool:
         return False
     obj_ea = int(expression.obj_ea)
     from ...infra.arch.arch import is_code_ea
+
     if not is_code_ea(obj_ea) and idc.get_str_type(obj_ea) == idc.STRTYPE_C:
         str_potential_name = idc.get_strlit_contents(obj_ea)
         if isinstance(str_potential_name, bytes):
@@ -285,6 +288,7 @@ def rename_using_assert(hx_view: Any, cfunc: Any, ctree_item: Any) -> None:
 
     from ...infra.arch.arch import get_funcs_calling_address
     from .recast import decompile_function
+
     for caller_ea in get_funcs_calling_address(assert_func_ea):
         caller_cfunc = decompile_function(caller_ea)
         if caller_cfunc:

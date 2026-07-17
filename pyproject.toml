@@ -71,6 +71,39 @@ omit = [
     # (scanner/helpers.py is NOT omitted — its decompile_function guard and
     # FunctionTouchVisitor collector are pure Python and unit-tested.)
     "*/domain/scanner/visitor_base.py",
+    # StructureBuilder widget init_ui() builds the full Qt layout, button
+    # wiring, and signal connections — all of which need a real PySide6
+    # event loop. The widget is verified end-to-end in real IDA via idat
+    # headless + manual interaction. The model operations it delegates to
+    # (disable_rows, enable_rows, set_origin, make_array, pack_substructure,
+    # remove_items, etc.) are unit-tested in test_structure_model.py.
+    "*/ui/widgets/structure_builder.py",
+    # StructureModel.pack/finalize/set_decl call live IDA UDT / ask_text /
+    # create_type APIs that the mock cannot reproduce; verified end-to-end
+    # in real IDA. The Python control flow (disable_rows, enable_rows,
+    # set_origin, make_array, remove_items, get_name, have_member, collisions,
+    # get_recognized_shape) is unit-tested in test_structure_model.py.
+    "*/domain/recon/structure_model.py",
+    # DiscoveredVTable (the "recon" path for discovered vtables) reads
+    # function pointers, builds UDTs, and auto-creates code. These all
+    # call live IDA APIs that the mock cannot reproduce. The Python
+    # control flow (heuristic flag, member count, tinfo coercion) is
+    # unit-tested in test_discovered_vtable.py.
+    "*/domain/recon/discovered_vtable.py",
+    # ClassViewer widget: 6 context-menu actions + customContextMenu +
+    # activated → open_function + refreshed signal + setFilterCaseSensitivity
+    # all need a real PySide6 event loop. Verified in real IDA via idat
+    # headless + manual right-click testing. The model methods it drives
+    # (refresh, rollback, commit, set_first_argument_type) are unit-tested
+    # in test_registered_class.py and test_tree_model.py.
+    "*/ui/widgets/class_viewer.py",
+    # Browser infrastructure (Class/VirtualMethod/RegisteredVTable) uses
+    # live IDA APIs (get_numbered_type, get_udt_details, set_name, apply_tinfo,
+    # ask_text) for in-place editing. Verified in real IDA via idat
+    # headless + manual interaction. Basic dataclass behaviour is unit-tested.
+    "*/domain/browser/registered_class.py",
+    "*/domain/browser/registered_vtable.py",
+    "*/domain/browser/tree_model.py",
 ]
 
 [tool.ruff]

@@ -4,6 +4,7 @@ Renamed from `core/temporary_structure.VirtualTable` to avoid collision
 with `core/classes.VirtualTable` (a different concept: a registered vtable
 in Local Types).
 """
+
 from __future__ import annotations
 
 import logging

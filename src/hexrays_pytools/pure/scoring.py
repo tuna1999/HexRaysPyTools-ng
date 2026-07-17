@@ -9,6 +9,7 @@ Scoring factors (higher = better):
     - 0x1000 if name starts with '_' (likely auto-generated)
     - 0xFFFF if size is 0 (invalid member)
 """
+
 from __future__ import annotations
 
 _VTABLE_BONUS = 0x2000

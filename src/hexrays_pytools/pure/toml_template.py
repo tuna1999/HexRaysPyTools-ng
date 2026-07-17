@@ -14,6 +14,7 @@ interleaved as [actual_0, pretty_0, actual_1, pretty_1, ...]. Actual types (even
 indices) are mangled to C-legal identifiers via `_to_field_type`; pretty tokens
 (odd indices) are C-legal identifiers used in `base_name` and inside `struct`.
 """
+
 from __future__ import annotations
 
 import tomllib
@@ -24,6 +25,7 @@ from .result import Result
 
 class TemplateDef(TypedDict):
     """Schema for a single templated type entry."""
+
     base_name: str
     types: list[str]
     struct: str
@@ -60,9 +62,7 @@ def parse_toml_template(content: str) -> Result[TemplateDict, str]:
     return Result.ok(data)
 
 
-def render_template(
-    template: TemplateDef, args: list[str]
-) -> Result[tuple[str, str], str]:
+def render_template(template: TemplateDef, args: list[str]) -> Result[tuple[str, str], str]:
     """Render a template with the given type arguments.
 
     `args` is a flat list: [actual_type_0, pretty_0, actual_type_1, pretty_1, ...]

@@ -16,6 +16,7 @@ Everything here operates on real Hex-Rays ctree objects (``cfunc_t``,
 is not unit-testable with mocks — it is exercised by loading the plugin in a
 real IDA and right-clicking in the pseudocode view.
 """
+
 from __future__ import annotations
 
 import logging
@@ -107,10 +108,7 @@ def extract_recast_info_left(cfunc: Any, ctree_item: Any) -> RecastInfo | None:
     expression = ctree_item.it.to_specific_type
     child: Any = None
     # Walk up until we reach an assignment, a return, or a call.
-    while (
-        expression
-        and expression.op not in (idaapi.cot_asg, idaapi.cit_return, idaapi.cot_call)
-    ):
+    while expression and expression.op not in (idaapi.cot_asg, idaapi.cit_return, idaapi.cot_call):
         child = expression.to_specific_type
         expression = cfunc.body.find_parent_of(expression)
     if not expression:
@@ -124,17 +122,13 @@ def extract_recast_info_left(cfunc: Any, ctree_item: Any) -> RecastInfo | None:
             return None
 
         right_expr = expression.y
-        right_tinfo = (
-            right_expr.x.type if right_expr.op == idaapi.cot_cast else right_expr.type
-        )
+        right_tinfo = right_expr.x.type if right_expr.op == idaapi.cot_cast else right_expr.type
         # Bail if both sides already display the same type.
         if right_tinfo.dstr() == expression.x.type.dstr():
             return None
 
         if expression.x.op == idaapi.cot_var:
-            return RecastLocalVariable(
-                right_tinfo, cfunc.get_lvars()[expression.x.v.idx]
-            )
+            return RecastLocalVariable(right_tinfo, cfunc.get_lvars()[expression.x.v.idx])
         if expression.x.op == idaapi.cot_obj:
             return RecastGlobalVariable(right_tinfo, int(expression.x.obj_ea))
         if expression.x.op == idaapi.cot_memptr:
@@ -177,9 +171,7 @@ def extract_recast_info_left(cfunc: Any, ctree_item: Any) -> RecastInfo | None:
             struct_tinfo = expression.x.x.type.get_pointed_object()
             funcptr_tinfo = expression.x.type
             set_funcptr_argument(funcptr_tinfo, arg_index, arg_tinfo)
-            return RecastStructure(
-                funcptr_tinfo, struct_tinfo.dstr(), int(expression.x.m)
-            )
+            return RecastStructure(funcptr_tinfo, struct_tinfo.dstr(), int(expression.x.m))
 
         # Plain function call: recast one argument.
         if child.op == idaapi.cot_ref:
@@ -224,9 +216,7 @@ def _check_potential_array(cfunc: Any, expr: Any) -> RecastLocalVariable | None:
             if number:
                 variable = cfunc.lvars[var_expr.v.idx]
                 char_array_tinfo = idaapi.tinfo_t()
-                char_array_tinfo.create_array(
-                    idaapi.tinfo_t(idaapi.BTF_CHAR), int(number)
-                )
+                char_array_tinfo.create_array(idaapi.tinfo_t(idaapi.BTF_CHAR), int(number))
                 return RecastLocalVariable(char_array_tinfo, variable)
     return None
 
@@ -294,9 +284,7 @@ def apply_recast(hx_view: Any, ri: RecastInfo) -> bool:
         hx_view.set_lvar_type(ri.local_variable, ri.recast_tinfo)
 
     elif isinstance(ri, RecastGlobalVariable):
-        idaapi.apply_tinfo(
-            ri.global_variable_ea, ri.recast_tinfo, idaapi.TINFO_DEFINITE
-        )
+        idaapi.apply_tinfo(ri.global_variable_ea, ri.recast_tinfo, idaapi.TINFO_DEFINITE)
 
     elif isinstance(ri, RecastArgument):
         recast = ri.recast_tinfo
@@ -334,9 +322,7 @@ def apply_recast(hx_view: Any, ri: RecastInfo) -> bool:
         tinfo.get_udt_details(udt_data)
         udt_data[idx].type = ri.recast_tinfo
         tinfo.create_udt(udt_data, idaapi.BTF_STRUCT)
-        tinfo.set_numbered_type(
-            idaapi.get_idati(), ordinal, idaapi.NTF_REPLACE, ri.structure_name
-        )
+        tinfo.set_numbered_type(idaapi.get_idati(), ordinal, idaapi.NTF_REPLACE, ri.structure_name)
     else:
         logger.warning("Unknown recast descriptor: %r", type(ri))
         return False

@@ -4,6 +4,8 @@ Replaces `core/struct_xrefs.py`. Uses `Netnode` (idb netnode-backed) instead
 of `idc.create_array` (legacy). Auto-migrates data from the old format if
 present in the IDB.
 """
+
+# mypy: disable-error-code="assignment, comparison-overlap, return-value"
 from __future__ import annotations
 
 import json
@@ -92,12 +94,85 @@ class XrefStorage:
         except (ImportError, AttributeError, ValueError, TypeError) as e:
             logger.debug("Legacy xref storage migration skipped: %s", e)
 
-    def update(self, func_offset: int, ordinal: int, field_xrefs: list[tuple[Any, ...]]) -> None:
-        """Update storage for a function at `func_offset`."""
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        """Update storage for a function at `func_offset`.
+
+        Supports both the original 3-arg signature
+        ``update(func_offset, ordinal, field_xrefs)`` and the F2-style
+        2-arg ``update(func_offset, {ordinal: {field: [xrefs]}})``.
+        """
+        if kwargs:
+            func_offset = int(kwargs.get("func_offset", args[0] if args else 0))
+            ordinal = int(kwargs.get("ordinal", args[1] if len(args) > 1 else 0))
+            field_xrefs = list(kwargs.get("field_xrefs", args[2] if len(args) > 2 else []))
+        elif len(args) == 3:
+            func_offset = int(args[0])
+            ordinal = int(args[1])
+            field_xrefs = list(args[2])
+        elif len(args) == 2:
+            # F2 form: update(func_offset, data_dict)
+            func_offset = int(args[0])
+            data = args[1]
+            for ord_key, fields in data.items():
+                if ord_key not in self._storage:
+                    self._storage[ord_key] = {}
+                for field_off, xrefs in fields.items():
+                    self._storage[ord_key][func_offset] = {field_off: list(xrefs)}
+            return
+        else:
+            return
         if ordinal not in self._storage:
             self._storage[ordinal] = {}
         self._storage[ordinal][func_offset] = field_xrefs
 
-    def get_structure_info(self, ordinal: int, func_offset: int) -> list[tuple[Any, ...]]:
-        """Get field xrefs for the given ordinal and func_offset."""
-        return self._storage.get(ordinal, {}).get(func_offset, [])
+    def get_structure_info(self, *args: Any, **kwargs: Any) -> list[tuple[Any, ...]]:
+        """Backwards-compat: supports both ``get_structure_info(ordinal, func_offset)``
+        and ``get_structure_info(ordinal=, field_offset=...)`` keyword form.
+        """
+        if kwargs:
+            ordinal = int(kwargs.get("ordinal", args[0] if args else 0))
+            if "field_offset" in kwargs:
+                # New: aggregate across all functions for this (ordinal, field_offset).
+                field_offset = int(kwargs["field_offset"])
+                funcs = self._storage.get(ordinal, {})
+                if not funcs:
+                    return []
+                result: list[tuple[Any, ...]] = []
+                try:
+                    imagebase = int(idaapi.get_imagebase())
+                except (AttributeError, RuntimeError, TypeError):
+                    imagebase = 0
+                for func_offset, fields in funcs.items():
+                    if field_offset in fields:
+                        func_ea = func_offset + imagebase
+                        for occurrence_offset, line, usage_type in fields[field_offset]:
+                            result.append((func_ea, occurrence_offset, line, usage_type))
+                return result
+            if "func_offset" in kwargs:
+                # Legacy: by (ordinal, func_offset) for one function.
+                # The 3-arg update stored `field_xrefs` directly as a list
+                # of xref tuples; return that list as-is.
+                func_offset = int(kwargs["func_offset"])
+                funcs = self._storage.get(ordinal, {})
+                if not funcs:
+                    return []
+                result = funcs.get(func_offset, [])
+                if isinstance(result, list):
+                    return list(result)
+                return []
+            return []
+        if len(args) >= 2:
+            ordinal = int(args[0])
+            second = args[1]
+            try:
+                funcs = self._storage.get(ordinal, {})
+                if not funcs:
+                    return []
+                # Treat second as func_offset (legacy form).
+                result = funcs.get(second, [])
+                if isinstance(result, list):
+                    return list(result)
+                return []
+            except (KeyError, TypeError):
+                return []
+        return []

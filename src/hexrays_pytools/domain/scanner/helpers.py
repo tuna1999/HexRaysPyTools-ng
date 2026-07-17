@@ -15,6 +15,7 @@ Everything here operates on live Hex-Rays ctree objects, so this module is
 not unit-testable end-to-end with mocks — only the Python-level control
 flow (the exception guard, the set membership) is covered by tests.
 """
+
 from __future__ import annotations
 
 import logging

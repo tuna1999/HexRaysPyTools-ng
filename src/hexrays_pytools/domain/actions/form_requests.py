@@ -3,6 +3,7 @@
 These wire the 3 "show widget" actions to the existing Qt widgets in
 ``ui/widgets/`` and the graph builder in ``domain/graph/``.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -37,16 +38,12 @@ class ShowGraph(Action):
         # Re-show the existing graph if open, otherwise build a new one.
         if self.graph_view is not None:
             try:
-                self.graph_view.change_selected(
-                    [int(sel) + 1 for sel in ctx.chooser_selection]
-                )
+                self.graph_view.change_selected([int(sel) + 1 for sel in ctx.chooser_selection])
                 self.graph_view.Refresh()
                 return
             except (AttributeError, RuntimeError):
                 pass
-        self.graph = StructureGraph(
-            [int(sel) + 1 for sel in ctx.chooser_selection]
-        )
+        self.graph = StructureGraph([int(sel) + 1 for sel in ctx.chooser_selection])
         # F1.b: use session factory instead of direct widget import
         if self._session is None or self._session.structure_graph_viewer_factory is None:
             raise RuntimeError("structure_graph_viewer_factory not wired; plugin init incomplete")

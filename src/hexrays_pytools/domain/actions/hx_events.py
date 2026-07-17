@@ -1,4 +1,5 @@
 """4 event handlers: MemberDoubleClick, PotentialNegativeCollector, StructXrefCollector, SilentIfSwapper."""
+
 from __future__ import annotations
 
 import logging
@@ -47,18 +48,13 @@ class MemberDoubleClick:
 
         from ...domain.types.tinfo_utils import get_member_name
 
-        demangled = (
-            self._session.demangled_names
-            if self._session is not None
-            else None
-        )
+        demangled = self._session.demangled_names if self._session is not None else None
 
         # Case 1: nested ptr-to-vtable access (`x->vf->method`)
         # — ``item.e.x`` is ``cot_memref`` pointing into a vtable struct, and
         # ``item.e.x.x`` is a ``cot_memptr`` access on the object.
-        if (
-            int(item.e.x.op) == int(idaapi.cot_memref)
-            and int(item.e.x.x.op) == int(idaapi.cot_memptr)
+        if int(item.e.x.op) == int(idaapi.cot_memref) and int(item.e.x.x.op) == int(
+            idaapi.cot_memptr
         ):
             vtable_tinfo = item.e.x.type.get_pointed_object()
             method_offset = int(item.e.m)
@@ -100,9 +96,7 @@ class MemberDoubleClick:
             func_offset = int(item.e.m)
             struct_tinfo = item.e.x.type.get_pointed_object()
             func_name = get_member_name(struct_tinfo, func_offset)
-            func_ea = choose_virtual_func_address(
-                str(func_name), demangled_names=demangled
-            )
+            func_ea = choose_virtual_func_address(str(func_name), demangled_names=demangled)
             if func_ea:
                 idaapi.jumpto(int(func_ea))
 
@@ -206,16 +200,11 @@ class StructXrefCollectorVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
 
         start = time.time()
         self.apply_to(self._cfunc.body, None)
-        # Persist to the netnode-backed XrefStorage. Our new API takes
-        # (func_offset, ordinal, field_xrefs) per call — iterate the
-        # result dict and call update for each (ordinal, field_offset)
-        # batch.
+        # Persist the whole per-function result in one call. The storage's
+        # update() replaces the previous entry for this func_offset and drops
+        # ordinals the function no longer references (handles re-decompilation).
         func_offset = int(self._function_address) - int(idaapi.get_imagebase())
-        for ordinal, field_dict in self._result.items():
-            for _field_offset, xref_list in field_dict.items():
-                # Pack the per-field list with its offset as a marker
-                # (the new XrefStorage stores the list verbatim).
-                self._storage.update(int(ordinal), func_offset, list(xref_list))
+        self._storage.update(func_offset, self._result)
         logger.debug(
             "Xref processing: %.3f s, %d fields, %d ordinals",
             time.time() - start,

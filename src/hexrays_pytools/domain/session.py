@@ -6,6 +6,7 @@ Replaces all module-level global mutable state from the original plugin
 Lifecycle: `MyPlugin.init()` calls `session.open()`;
 `MyPlugin.term()` calls `session.close()`.
 """
+
 from __future__ import annotations
 
 import logging

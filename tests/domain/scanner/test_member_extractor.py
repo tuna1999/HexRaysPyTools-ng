@@ -71,3 +71,34 @@ def test_search_visitor_manipulate_does_not_raise() -> None:
 def test_shallow_visitor_subclasses_search() -> None:
     """NewShallowSearchVisitor is a subclass of SearchVisitor."""
     assert issubclass(NewShallowSearchVisitor, SearchVisitor)
+
+
+def test_deref_tinfo_attribute_name_correct() -> None:
+    """Regression for ``_SearchVisitor__deref_tinfo`` name-mangling bug.
+
+    SearchVisitor defines ``_deref_tinfo`` (single underscore = ``public``
+    Python convention for "private"). Calling it as ``self.__deref_tinfo``
+    inside a subclass method name-mangles to ``_SearchVisitor__deref_tinfo``
+    which raises ``AttributeError`` at runtime — the original
+    HexRaysPyTools v1.x didn't have this issue because the original used a
+    flat class, not a multiple-inheritance subclass.
+
+    This test simply checks ``_deref_tinfo`` is reachable on every visitor
+    subclass (SearchVisitor, NewShallowSearchVisitor,
+    NewDeepSearchVisitor, DeepReturnVisitor).
+    """
+    from hexrays_pytools.domain.scanner.member_extractor import (  # type: ignore[import-not-found]
+        DeepReturnVisitor,
+        NewDeepSearchVisitor,
+    )
+
+    for cls in (
+        SearchVisitor,
+        NewShallowSearchVisitor,
+        NewDeepSearchVisitor,
+        DeepReturnVisitor,
+    ):
+        assert hasattr(cls, "_deref_tinfo"), f"{cls.__name__} missing _deref_tinfo"
+        assert isinstance(cls._deref_tinfo, classmethod) or hasattr(
+            cls, "_deref_tinfo"
+        ), f"{cls.__name__}._deref_tinfo not a method"

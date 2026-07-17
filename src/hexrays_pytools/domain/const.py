@@ -16,6 +16,7 @@ Field naming convention: snake_case to match Python idioms (the original used
 name is the canonical reference; callers should never reach into the
 ``Consts`` internals — pass the dataclass around or read individual fields.
 """
+
 from __future__ import annotations
 
 import logging
@@ -135,7 +136,9 @@ def init_consts() -> Consts:
 
     logger.debug(
         "Consts initialized (ea64=%s, ea_size=%d, legal_types=%d)",
-        ea64, ea_size, len(legal_types),
+        ea64,
+        ea_size,
+        len(legal_types),
     )
     return Consts(
         ea64=ea64,

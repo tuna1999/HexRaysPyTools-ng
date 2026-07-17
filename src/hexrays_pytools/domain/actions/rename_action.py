@@ -6,6 +6,7 @@ contained; ``PropagateName`` uses the recursive scanner engine
 (``RecursiveObjectDownwardsVisitor`` from Phase A.4) to walk all callees
 and rename the tracked object everywhere it appears.
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,9 +40,7 @@ _RENAME_MENU_PATH = "HexRaysPyTools/Rename/"
 # off_4, etc. Propagating a real name into these slots is the use case;
 # propagating a real name over another real name is opt-in via the
 # ``propagate_through_all_names`` setting.
-_DEFAULT_NAME_PATTERN = re.compile(
-    r"^(?:[av]\d+|[qd]?word|field_|off_)"
-)
+_DEFAULT_NAME_PATTERN = re.compile(r"^(?:[av]\d+|[qd]?word|field_|off_)")
 
 
 def _is_default_name(name: str | None) -> bool:
@@ -200,14 +199,10 @@ class _NamePropagator(RecursiveObjectDownwardsVisitor):
 
     def _manipulate(self, cexpr: Any, obj: Any) -> None:
         if self.crippled:
-            logger.debug(
-                "Skipping crippled function at %s", to_hex(int(self._cfunc.entry_ea))
-            )
+            logger.debug("Skipping crippled function at %s", to_hex(int(self._cfunc.entry_ea)))
             return
 
-        propagate_all = bool(
-            self._session_override_get("propagate_through_all_names")
-        )
+        propagate_all = bool(self._session_override_get("propagate_through_all_names"))
 
         if int(obj.id) == int(SO_GLOBAL_OBJECT):
             old_name = str(idaapi.get_short_name(int(cexpr.obj_ea)))
@@ -216,9 +211,7 @@ class _NamePropagator(RecursiveObjectDownwardsVisitor):
                     lambda x: idaapi.set_name(int(cexpr.obj_ea), x),
                     self._propagated_name,
                 )
-                logger.debug(
-                    "Renamed global variable from %s to %s", old_name, new_name
-                )
+                logger.debug("Renamed global variable from %s to %s", old_name, new_name)
         elif int(obj.id) == int(SO_LOCAL_VARIABLE):
             lvar = self._cfunc.get_lvars()[int(cexpr.v.idx)]
             old_name = str(lvar.name)
@@ -227,9 +220,7 @@ class _NamePropagator(RecursiveObjectDownwardsVisitor):
                     lambda x: self._hx_view.rename_lvar(lvar, x, True),
                     self._propagated_name,
                 )
-                logger.debug(
-                    "Renamed local variable from %s to %s", old_name, new_name
-                )
+                logger.debug("Renamed local variable from %s to %s", old_name, new_name)
         elif int(obj.id) in (int(SO_STRUCT_POINTER), int(SO_STRUCT_REFERENCE)):
             struct_tinfo = cexpr.x.type
             offset = int(cexpr.m)
@@ -242,9 +233,7 @@ class _NamePropagator(RecursiveObjectDownwardsVisitor):
                     lambda x: change_member_name(struct_name, offset, x),
                     self._propagated_name,
                 )
-                logger.debug(
-                    "Renamed struct member from %s to %s", old_name, new_name
-                )
+                logger.debug("Renamed struct member from %s to %s", old_name, new_name)
 
     def _session_override_get(self, key: str) -> bool:
         """Read a setting via ``self._hx_view``'s session (if available).

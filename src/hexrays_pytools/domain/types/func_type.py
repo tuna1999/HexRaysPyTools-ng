@@ -3,6 +3,7 @@
 Extracted from the original `core/helper.py`. Wraps `idaapi.func_type_data_t`
 operations on function arguments, return type, and argument names.
 """
+
 from __future__ import annotations
 
 import idaapi  # type: ignore[import-not-found]

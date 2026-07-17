@@ -4,7 +4,12 @@ Ported from the original `callbacks/struct_xref_representation.py` (85 LOC).
 Works in two widgets: pseudocode (cursor on a struct field access) and the
 Local Types view (cursor on a struct member). Shows a chooser of all stored
 field cross-references and jumps to the selected one.
+
+Reads via ``session.xrefs`` (Session-owned ``XrefStorage``); never instantiates
+a fresh ``XrefStorage`` — that would bypass the in-memory cache and miss
+entries collected during the current session.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -14,7 +19,6 @@ import idc  # type: ignore[import-not-found]
 
 from ..chooser import MyChoose
 from ..types.tinfo_utils import get_member_name, get_ordinal
-from ..xrefs.xref_storage import XrefStorage
 from .action import HexRaysXrefAction
 
 if TYPE_CHECKING:
@@ -42,7 +46,7 @@ class FindFieldXrefs(HexRaysXrefAction):
 
     def activate(self, ctx: Any) -> None:
         ordinal = 0
-        offset = 0
+        field_offset = 0
         struct_name = ""
         field_name = ""
 
@@ -53,29 +57,34 @@ class FindFieldXrefs(HexRaysXrefAction):
             item = hx_view.item
             if not self.check(hx_view):
                 return
-            offset = int(item.e.m)
+            field_offset = int(item.e.m)
             struct_type = item.e.x.type.remove_ptr_or_array()
             ordinal = get_ordinal(struct_type)
             struct_name = str(struct_type.dstr())
-            field_name = get_member_name(struct_type, offset)
+            field_name = get_member_name(struct_type, field_offset)
         elif ctx.widget_type == idaapi.BWN_TILIST:
             ordinal = int(ctx.cur_struc.ordinal)
-            offset = int(ctx.cur_strmem.soff)
+            field_offset = int(ctx.cur_strmem.soff)
             struct_name = str(idc.get_struc_name(int(ctx.cur_struc.id)))
             field_name = str(idc.get_member_name(int(ctx.cur_strmem.id)))
         else:
             return
 
-        xrefs = XrefStorage().get_structure_info(ordinal=ordinal, func_offset=offset)
+        # Query the Session-owned storage (NOT a fresh XrefStorage() — that
+        # would bypass the in-memory cache and read un-persisted data). The
+        # query key is (ordinal, field_offset); storage iterates all functions.
+        storage = self._session.xrefs if self._session is not None else None
+        if storage is None:
+            return
+        xrefs = storage.get_structure_info(ordinal=ordinal, field_offset=field_offset)
+        # Each entry is (func_ea, occurrence_offset, line, usage_type).
         data: list[list[str]] = []
         for xref_info in xrefs:
             data.append(
                 [
-                    str(idaapi.get_short_name(int(xref_info[0])))
-                    + "+"
-                    + hex(int(xref_info[1])),
-                    str(xref_info[2]),
+                    str(idaapi.get_short_name(int(xref_info[0]))) + "+" + hex(int(xref_info[1])),
                     str(xref_info[3]),
+                    str(xref_info[2]),
                 ]
             )
 
@@ -93,5 +102,5 @@ class FindFieldXrefs(HexRaysXrefAction):
             return
 
         xref = xrefs[idx]
-        # xref_info is (func_offset, field_ea, access_type, line) — open at func.
-        idaapi.open_pseudocode(int(xref[0]), False)
+        # Jump to the function at func_ea + occurrence_offset.
+        idaapi.open_pseudocode(int(xref[0]) + int(xref[1]), False)

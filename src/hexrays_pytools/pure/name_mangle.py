@@ -3,6 +3,7 @@
 Pure function — no IDA dependency. Replaces the original `demangled_name_to_c_str`
 in `HexRaysPyTools/core/common.py` with explicit, well-tested behavior.
 """
+
 from __future__ import annotations
 
 import re

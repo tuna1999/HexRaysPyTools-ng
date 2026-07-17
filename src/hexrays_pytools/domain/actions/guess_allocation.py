@@ -5,6 +5,7 @@ fed by ``malloc``/``operator new`` (HEAP), stack allocation (STACK), or a
 global initializer. Shows the discovered allocations in a chooser so the
 user can jump to the allocation site.
 """
+
 from __future__ import annotations
 
 import logging
@@ -72,9 +73,7 @@ class _GuessAllocationVisitor(RecursiveObjectUpwardsVisitor):
                 # other = malloc(...);   other  →  the malloc alloc_obj
                 alloc_obj = MemoryAllocationObject.create(self._cfunc, parent.y)
                 if alloc_obj is not None:
-                    self.data.append(
-                        [int(alloc_obj.ea), str(obj.name), self._get_line(), "HEAP"]
-                    )
+                    self.data.append([int(alloc_obj.ea), str(obj.name), self._get_line(), "HEAP"])
             elif int(parent.op) == int(idaapi.cot_ref):
                 # &local → stack address
                 cexpr_ea = idaapi.BADADDR

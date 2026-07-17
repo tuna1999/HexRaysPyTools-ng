@@ -17,6 +17,7 @@ mocks. Tests cover the Python-level state and the pure static helpers.
 
 Ported from the original ``core/variable_scanner.py`` (337 LOC).
 """
+
 from __future__ import annotations
 
 import logging
@@ -121,7 +122,8 @@ class SearchVisitor(ObjectDownwardsVisitor):
             cexpr_ea = find_asm_address(cexpr, self.parents)
             logger.warning(
                 "Variable %s has weird type at %s",
-                str(obj.name), to_hex(int(cexpr_ea)),
+                str(obj.name),
+                to_hex(int(cexpr_ea)),
             )
             return
 
@@ -131,12 +133,15 @@ class SearchVisitor(ObjectDownwardsVisitor):
         else:
             member = self._extract_member_from_xword(cexpr, obj)
         if member is None:
+            logger.debug("  no member extracted from '%s'", str(obj.name))
             return
 
         # 3. Persist.
         logger.debug(
-            "\tCreating member with type %s, %s, offset - %d",
-            str(member.tinfo), str(member.scanned_variables), int(member.offset),
+            "  created member offset=%d tinfo=%s scanned=%s",
+            int(member.offset),
+            str(member.tinfo),
+            str(member.scanned_variables),
         )
         model = self._workspace.model
         if model is not None:
@@ -167,7 +172,8 @@ class SearchVisitor(ObjectDownwardsVisitor):
         if int(offset) < 0:
             logger.error(
                 "Considered to be impossible: offset - %d, obj - %s",
-                int(offset), to_hex(int(cexpr_ea)),
+                int(offset),
+                to_hex(int(cexpr_ea)),
             )
             raise AssertionError
 
@@ -176,6 +182,11 @@ class SearchVisitor(ObjectDownwardsVisitor):
 
         if obj_ea is not None and int(obj_ea) != 0:
             if DiscoveredVTable.check_address(int(obj_ea)):
+                logger.debug(
+                    "    _get_member off=%d -> DiscoveredVTable @ %s",
+                    int(offset),
+                    to_hex(int(obj_ea)),
+                )
                 return DiscoveredVTable(
                     offset=int(offset),
                     tinfo=None,
@@ -190,15 +201,20 @@ class SearchVisitor(ObjectDownwardsVisitor):
                     tinfo = func_tinfo
                 else:
                     tinfo = self._dummy_func
-                return Member(
-                    offset=int(offset), tinfo=tinfo, origin=self._origin
+                logger.debug(
+                    "    _get_member off=%d -> Member(funcptr) @ %s tinfo=%s",
+                    int(offset),
+                    to_hex(int(obj_ea)),
+                    str(tinfo),
                 )
+                return Member(offset=int(offset), tinfo=tinfo, origin=self._origin)
 
         if (
             tinfo is None
             or (self._void_tinfo is not None and tinfo.equals_to(self._void_tinfo))
             or (self._const_void_tinfo is not None and tinfo.equals_to(self._const_void_tinfo))
         ):
+            logger.debug("    _get_member off=%d -> VoidMember", int(offset))
             return VoidMember(offset=int(offset), origin=self._origin)
 
         if self._const_pchar_tinfo is not None and tinfo.equals_to(self._const_pchar_tinfo):
@@ -207,6 +223,11 @@ class SearchVisitor(ObjectDownwardsVisitor):
             tinfo = self._pvoid_tinfo
         else:
             tinfo.clr_const()
+        logger.debug(
+            "    _get_member off=%d -> Member tinfo=%s",
+            int(offset),
+            str(tinfo),
+        )
         return Member(offset=int(offset), tinfo=tinfo, origin=self._origin)
 
     def _parse_call(
@@ -241,14 +262,13 @@ class SearchVisitor(ObjectDownwardsVisitor):
         cexpr: Any,
         obj: Any,
     ) -> Any:
-        parents_type = [
-            idaapi.get_ctype_name(int(x.cexpr.op)) for x in list(self.parents)[:0:-1]
-        ]
+        parents_type = [idaapi.get_ctype_name(int(x.cexpr.op)) for x in list(self.parents)[:0:-1]]
         parents = [x.cexpr for x in list(self.parents)[:0:-1]]
 
         logger.debug(
             "Parsing expression %s. Parents - %s",
-            str(obj.name), str(parents_type),
+            str(obj.name),
+            str(parents_type),
         )
 
         # Extracting offset and removing expression parents making this offset
@@ -256,6 +276,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
             # `obj[idx]` or `(TYPE *) + x`
             if int(parents[0].y.op) != int(idaapi.cot_num):
                 # Dynamic offset — can't reason about it.
+                logger.debug("  ptr: skip '%s' (dynamic %s offset)", str(obj.name), parents_type[0])
                 return None
             offset = int(parents[0].y.numval()) * int(cexpr.type.get_ptrarr_objsize())
             cexpr = self.parent_expr()
@@ -265,6 +286,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         elif parents_type[0:2] == ["cast", "add"]:
             # (TYPE *)obj + offset or (TYPE)obj + offset
             if int(parents[1].y.op) != int(idaapi.cot_num):
+                logger.debug("  ptr: skip '%s' (dynamic cast+add offset)", str(obj.name))
                 return None
             if bool(parents[0].type.is_ptr()):
                 size = int(parents[0].type.get_ptrarr_objsize())
@@ -277,28 +299,26 @@ class SearchVisitor(ObjectDownwardsVisitor):
         else:
             offset = 0
 
-        return self._extract_member(
-            cexpr, obj, offset, parents, parents_type
-        )
+        return self._extract_member(cexpr, obj, offset, parents, parents_type)
 
     def _extract_member_from_xword(
         self,
         cexpr: Any,
         obj: Any,
     ) -> Any:
-        parents_type = [
-            idaapi.get_ctype_name(int(x.cexpr.op)) for x in list(self.parents)[:0:-1]
-        ]
+        parents_type = [idaapi.get_ctype_name(int(x.cexpr.op)) for x in list(self.parents)[:0:-1]]
         parents = [x.cexpr for x in list(self.parents)[:0:-1]]
 
         logger.debug(
             "Parsing expression %s. Parents - %s",
-            str(obj.name), str(parents_type),
+            str(obj.name),
+            str(parents_type),
         )
 
         if len(parents_type) >= 1 and parents_type[0] == "add":
             other = parents[0].theother(cexpr)
             if int(other.op) != int(idaapi.cot_num):
+                logger.debug("  xword: skip '%s' (dynamic add offset)", str(obj.name))
                 return None
             offset = int(other.numval())
             cexpr = self.parent_expr()
@@ -307,9 +327,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         else:
             offset = 0
 
-        return self._extract_member(
-            cexpr, obj, offset, parents, parents_type
-        )
+        return self._extract_member(cexpr, obj, offset, parents, parents_type)
 
     def _extract_member(
         self,
@@ -334,24 +352,18 @@ class SearchVisitor(ObjectDownwardsVisitor):
                 del parents_type[0]
                 del parents[0]
             else:
-                default_tinfo = self._SearchVisitor__deref_tinfo(default_tinfo)
+                default_tinfo = self._deref_tinfo(default_tinfo)
 
             if len(parents_type) >= 2 and parents_type[1] == "asg":
                 if parents[1].x == parents[0]:
                     # *(TYPE *)(var + x) = ???
                     obj_ea = self._extract_obj_ea(parents[1].y)
-                    return self._get_member(
-                        int(offset), cexpr, obj, parents[1].y.type, obj_ea
-                    )
-                return self._get_member(
-                    int(offset), cexpr, obj, parents[1].x.type
-                )
+                    return self._get_member(int(offset), cexpr, obj, parents[1].y.type, obj_ea)
+                return self._get_member(int(offset), cexpr, obj, parents[1].x.type)
             if len(parents_type) >= 2 and parents_type[1] == "call":
                 if parents[1].x == parents[0]:
                     # ((type (__some_call *)(..., ..., ...))(var[idx]))(...)
-                    return self._get_member(
-                        int(offset), cexpr, obj, parents[0].type
-                    )
+                    return self._get_member(int(offset), cexpr, obj, parents[0].type)
                 _idx, tinfo = get_call_argument_info(parents[1], parents[0])
                 if tinfo is None:
                     tinfo = self._pchar_tinfo
@@ -366,9 +378,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         if len(parents_type) >= 1 and parents_type[0] == "asg" and parents[0].y == cexpr:
             # other_obj = (TYPE) (var + offset)
             self._parse_left_assignee(parents[1].x, int(offset))
-        return self._get_member(
-            int(offset), cexpr, obj, self._deref_tinfo(default_tinfo)
-        )
+        return self._get_member(int(offset), cexpr, obj, self._deref_tinfo(default_tinfo))
 
     @staticmethod
     def _extract_obj_ea(cexpr: Any) -> int | None:
@@ -464,9 +474,7 @@ class DeepReturnVisitor(NewDeepSearchVisitor):
         consts: Consts | None = None,
     ) -> None:
         super().__init__(cfunc, origin, obj, workspace, consts)
-        self._callers_ea: set[int] = get_funcs_calling_address(
-            int(cfunc.entry_ea)
-        )
+        self._callers_ea: set[int] = get_funcs_calling_address(int(cfunc.entry_ea))
         self._call_obj = obj
 
     def _start(self) -> None:
