@@ -65,7 +65,9 @@ def test_structure_builder_column_count() -> None:
     try:
         builder.OnCreate(None)
         # table view is wired to the structure model; columnCount comes from it.
-        assert builder.struct_view.model() is builder.structure_model
-        assert builder.struct_view.model().columnCount() == 5
+        assert builder._struct_view.model() is builder.structure_model
+        # 4 columns: Offset, Type, Name, Comment (mirrors original
+        # TemporaryStructureModel).
+        assert builder._struct_view.model().columnCount() == 4
     finally:
         structure_builder.form_to_pyside_widget = original

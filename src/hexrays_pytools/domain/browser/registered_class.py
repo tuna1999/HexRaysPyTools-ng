@@ -3,6 +3,7 @@
 Extracted from `core/classes.py:Class`. Represents a single class discovered
 in Local Types that has one or more vtable fields.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ import idaapi  # type: ignore[import-not-found]
 @dataclass
 class Class:
     """A struct/class with vtable fields."""
+
     name: str
     ordinal: int = 0
     tinfo: Any = None
@@ -52,6 +54,7 @@ class Class:
     def has_function(self, name_regex: str) -> bool:
         """Return True if any vtable contains a function matching `name_regex`."""
         import re
+
         for vtable in self.vtables.values():
             for vf in getattr(vtable, "virtual_functions", []):
                 if re.search(name_regex, getattr(vf, "name", "")):

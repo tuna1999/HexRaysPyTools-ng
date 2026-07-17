@@ -1,6 +1,8 @@
 """Structure Graph viewer widget — graph of type dependencies."""
+
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 import idaapi  # type: ignore[import-not-found]
@@ -40,4 +42,19 @@ class StructureGraphViewer(idaapi.GraphViewer):  # type: ignore[misc]
         node = self[node_id]
         if hasattr(self._graph, "change_selected") and hasattr(node, "name"):
             self._graph.change_selected({node})
+            self.Refresh()
+            # FIX: original called Select(node) to highlight the chosen
+            # node in the graph. self[node_id] is the ordinal (an int
+            # key into the graph's node map) — pass it through Select.
+            with contextlib.suppress(AttributeError, RuntimeError):
+                self.Select(node_id)
+
+    def change_selected(self, ordinals: Any) -> None:
+        """Public helper kept for backwards compat with the original API.
+
+        Accepts any iterable of ints — internally coerces to a set so
+        callers don't need to know the storage key type.
+        """
+        if hasattr(self._graph, "change_selected"):
+            self._graph.change_selected({int(o) for o in ordinals})
             self.Refresh()

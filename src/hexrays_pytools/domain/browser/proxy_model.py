@@ -3,6 +3,7 @@
 Replaces `core/classes.py:ProxyModel`. Uses `setFilterRegularExpression`
 (was `setFilterRegExp`, removed in Qt6).
 """
+
 from __future__ import annotations
 
 import re
