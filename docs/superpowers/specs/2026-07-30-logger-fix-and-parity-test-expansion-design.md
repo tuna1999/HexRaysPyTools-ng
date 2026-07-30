@@ -221,12 +221,17 @@ verification/
 ├── test_patterns.exe        # compiled binary (gitignored)
 ├── test_patterns.exe.i64    # IDA database (gitignored)
 ├── verify_parity.py         # EXTENDED: +10 test functions
-├── _build.bat               # NEW: compile wrapper (retained from exploration)
 ├── logs/                    # gitignored
 │   ├── parity_results.json  # structured test output
 │   └── parity.log           # IDA log capture
 └── .gitignore               # NEW: ignore *.exe, *.i64, logs/, .id0/.id1/.id2/.nam
 ```
+
+The root `.gitignore` already covers `__pycache__/`, `dist/`, `*.egg-info/`.
+The new `verification/.gitignore` adds the IDA-specific artifacts
+(`*.exe`, `*.i64`, `*.id0`, `*.id1`, `*.id2`, `*.nam`, `logs/`). A
+verification-local `.gitignore` is preferred over polluting the root
+file because the patterns are specific to the verification workflow.
 
 ### Test Target — `test_patterns.c`
 
@@ -238,7 +243,10 @@ containing the pattern for one or more test groups:
 #include <stdint.h>
 #include <stdlib.h>
 
-extern volatile int g_sink;   /* anti-dead-code sink */
+/* anti-dead-code sink: defined here (not just `extern`) so the linker
+   has a symbol to resolve. `volatile` forces every read/write to hit
+   memory, defeating any residual optimizer cleverness at -O0. */
+volatile int g_sink = 0;
 
 /* --- Group 1: Scanner (struct pointer field access) --- */
 struct ScanTarget {
@@ -338,7 +346,8 @@ Design decisions:
   no excuse to drop the writes.
 - **Function names are ASCII identifiers** (`scan_simple`, not mangled
   C++): the parity test resolves functions by name via
-  `idc.get_name_ea(BADADDR, "scan_simple")`, which is stable across
+  `idc.get_name_ea_simple("scan_simple")` (a thin wrapper over
+  `ida_name.get_name_ea(BADADDR, name)`), which is stable across
   rebuilds regardless of compilation order.
 - **No C++, no exceptions, no RTTI**: keeps the binary small and the
   Hex-Rays output clean (no name mangling, no vtable clutter).
@@ -354,8 +363,8 @@ are unchanged.
 
 | # | Function | What it tests | Assertion contract |
 |---|---|---|---|
-| 6 | `t_scanner_shallow` | `NewShallowSearchVisitor.process()` on `scan_simple` | After `process()`, `model.rows` has ≥ 2 members; their offsets include 0 and 4. |
-| 7 | `t_scanner_chain` | `NewShallowSearchVisitor` on `scan_chain` (assignment chain `q = p`) | After `process()`, `model.rows` has ≥ 1 member at offset 0 (from `q->field_a`). Confirms `ObjectDownwardsVisitor` followed the `q = p` chain. |
+| 6 | `t_scanner_shallow` | `NewShallowSearchVisitor.process()` on `scan_simple` | After `process()`, `model.items` (the public property — see `structure_model.py:211-213`; internal attr is `_items`) has ≥ 2 members; their offsets include 0 and 4. |
+| 7 | `t_scanner_chain` | `NewShallowSearchVisitor` on `scan_chain` (assignment chain `q = p`) | After `process()`, `model.items` has ≥ 1 member at offset 0 (from `q->field_a`). Confirms `ObjectDownwardsVisitor` followed the `q = p` chain. |
 
 Setup for both: construct a `ReconWorkspace`, `set_model(StructureModel())`,
 resolve `scan_simple`/`scan_chain` by name, decompile, find the first
@@ -385,7 +394,7 @@ follow-up can mock `hx_view.rename_lvar` to verify the rename call args.
 |---|---|---|---|
 | 10 | `t_swap_inverse_if` | `inverse_if(cif)` on the `if` in `swap_if_else` | After the call: `cif.expr.op == idaapi.cot_lnot`, and the `cif.ithen` / `cif.ielse` branches are swapped (compare their `.ea` before/after). |
 | 11 | `t_swap_persistence` | `invert(func_ea, if_ea)` + `get_inverted(func_ea)` | After `invert`: `get_inverted(func_ea)` returns `{if_ea - imagebase}`. After a second `invert` (toggle off): the set is empty. |
-| 12 | `t_swap_spaghetti` | `SpaghettiVisitor.apply_to()` on `spaghetti_pattern` | Snapshot `str(cfunc)` before and after. Assert the two differ (the visitor transformed the ctree). Specifically: after the run, the `if`'s then-branch size (`cif.ithen.cblock.size()`) is ≥ 1 (the return was pushed into it per `swap_if.py:191`), confirming the flatten took effect. Avoid asserting "return is no longer last" — `swap_if.py:185-189` re-adds it to the main block when the spilled statements don't already end in return/goto. |
+| 12 | `t_swap_spaghetti` | `SpaghettiVisitor.apply_to()` on `spaghetti_pattern` | Before the visitor: `cif.ithen.cblock.size() == 2` (the two `x = ...` assignments) and the outer block's last statement is `cit_return`. After the visitor: `cif.ithen.cblock.size() == 3` (the return was appended per `swap_if.py:191`), and the outer block's last statement is also `cit_return` (re-added by `swap_if.py:185-189` because the spilled assignments don't end in return/goto). Assert both: (a) `cif.ithen.cblock.size()` increased by 1, and (b) `str(cfunc)` before ≠ `str(cfunc)` after. This avoids the trap of asserting "return is no longer last" — `swap_if.py:185-189` explicitly re-adds it. |
 
 Setup: resolve `swap_if_else` / `spaghetti_pattern` by name, decompile,
 walk the cfunc body to find the `cit_if` citem.
@@ -395,7 +404,7 @@ walk the cfunc body to find the `cit_if` citem.
 | # | Function | What it tests | Assertion contract |
 |---|---|---|---|
 | 13 | `t_negoffset_detect` | `AnalyseVisitor` on `negative_offset_access` with candidates seeded | After `apply_to`, `store` dict has ≥ 1 entry (the `struct Inner*` lvar). |
-| 14 | `t_negoffset_magic_comment` | `_parse_magic_comment` on a synthetic lvar with ` ```Outer+8``` ` comment | Returns a `NegativeLocalInfo` with `.parent_tinfo.dstr() == "Outer"` and `.offset == 8`. |
+| 14 | `t_negoffset_magic_comment` | `_parse_magic_comment` on a synthetic lvar with ` ```Outer+8``` ` comment | Returns a `NegativeLocalInfo` whose `.parent_tinfo.dstr()` endswith `"Outer"` (IDA may prefix with `"struct "` depending on how the type was imported — see `rename.py:187` which strips this prefix) and whose `.offset == 8`. |
 | 15 | `t_negoffset_replace` | `ReplaceVisitor` on a cfunc whose lvars have magic comments | After `apply_to`, `str(cfunc)` contains the string `"CONTAINING_RECORD"`. |
 
 Setup for 13: resolve `negative_offset_access`, decompile, find the
@@ -405,7 +414,12 @@ Setup for 13: resolve `negative_offset_access`, decompile, find the
 Setup for 14: construct a synthetic `lvar_t` (or mock one) with a
 `.cmt` containing ` ```Outer+8``` ` and a `.type()` returning a pointer
 to `Inner`. Requires importing `Outer` and `Inner` types into the IDB
-first via `idaapi.parse_decl` / `import_type`.
+first so `tinfo_t.get_named_type(idati, "Outer")` (called inside
+`_parse_magic_comment` at `negative_offsets.py:54`) can resolve them.
+Use `idaapi.idc_parse_types("struct Inner { int a; int b; }; struct Outer { int header; char pad[4]; struct Inner inner; };", 0)`
+— this persists the types into the IDB's Local Types, distinct from
+`verify_parity.py`'s existing `_parse()` helper which only produces an
+in-memory `tinfo_t` without IDB persistence.
 
 Setup for 15: same as 13, but first call `_set_magic_comment` (a helper
 we add to the script) to tag the lvar with the comment, then run
@@ -444,11 +458,11 @@ reused; delete it to force a fresh auto-analysis.
 Three principles, to avoid the brittleness that killed earlier
 attempts at ctree assertions:
 
-1. **Count over content.** Assert `len(model.rows) >= 2` rather than
-   "model.rows[1].name == 'field_b'". Hex-Rays may rename or reorder;
+1. **Count over content.** Assert `len(model.items) >= 2` rather than
+   "model.items[1].name == 'field_b'". Hex-Rays may rename or reorder;
    counts are stable.
 2. **Offset sets over name lists.** Assert `{0, 4}.issubset({m.offset
-   for m in model.rows})` — offsets come from the struct layout, which
+   for m in model.items})` — offsets come from the struct layout, which
    is deterministic from the C source. **Exception:** rename tests
    (paths 8-9) assert on names, because the entire *purpose* of a rename
    test is to verify the name produced. This is acceptable because the
@@ -474,7 +488,7 @@ be triaged from the JSON without re-running IDA.
 | IDA auto-analysis renames `scan_simple` to `sub_140001234` | Medium | GCC emits symbol names in the symbol table; `-g` preserves them. Test resolves by `idc.get_name_ea` first, falls back to scanning all functions for a matching size/signature if the name is not found. |
 | Scanner paths need `Session.consts` populated | Known | Script constructs a `Session()`, calls `.open()` (populates `consts`), and passes `consts=session.consts` into visitor constructors. |
 | Test binary not deterministic across machines | Low | `test_patterns.c` is committed; `.exe` is gitignored and rebuilt by a documented command. The `.i64` is also gitignored. |
-| Magic-comment path (14-15) requires `Outer`/`Inner` types in IDB | Known | Script imports the types via `idc.parse_decl` + `idaapi.create_type` before running the test. This is the same path `set_decl` (path 4) already exercises successfully. |
+| Magic-comment path (14-15) requires `Outer`/`Inner` types in IDB | Known | Script imports the types via `idaapi.idc_parse_types(declaration, 0)` to persist them into Local Types (distinct from `_parse()` which only builds an in-memory tinfo). `_parse_magic_comment` calls `get_named_type(idati, name)` which needs the IDB-persisted form. |
 
 ## Testing the Tests
 
