@@ -192,6 +192,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
                     tinfo=None,
                     name=str(scan_obj.name),
                     origin=self._origin,
+                    address=int(obj_ea),
                 )
             if is_code_ea(int(obj_ea)):
                 cfunc = decompile_function(int(obj_ea))

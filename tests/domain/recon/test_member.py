@@ -258,11 +258,27 @@ def test_get_udt_member_renames_auto_names_only() -> None:
     udt = auto.get_udt_member()
     if udt is not None:  # mock env may not build udt_member_t
         assert udt.name != "dword_10"  # rewritten from type name + offset
+        assert udt.offset == 0x10 * 8
+        assert udt.size == 4 * 8
 
     user = AbstractMember(offset=0x10, tinfo=tinfo, name="pContext")
     udt2 = user.get_udt_member()
     if udt2 is not None:
         assert udt2.name == "pContext"
+
+
+def test_get_udt_member_array_size_uses_total_bit_size() -> None:
+    """IDA 9 udm.size describes the whole array member, in bits."""
+    tinfo = MagicMock()
+    tinfo.dstr.return_value = "int"
+    tinfo.get_size.return_value = 4
+    member = AbstractMember(offset=0x20, tinfo=tinfo, name="values")
+
+    udt = member.get_udt_member(array_size=3)
+
+    assert udt is not None
+    assert udt.offset == 0x20 * 8
+    assert udt.size == 4 * 3 * 8
 
 
 def test_activate_cancel_is_noop() -> None:

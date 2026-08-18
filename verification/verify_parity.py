@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import traceback
 from pathlib import Path
 from typing import Any
@@ -119,18 +120,63 @@ def t_get_udt_member() -> str:
     udt = m.get_udt_member()
     assert udt is not None, "get_udt_member returned None"
     assert udt.name != "dword_10", f"auto-name not rewritten: {udt.name}"
+    assert int(udt.offset) == 0x10 * 8, f"udm offset must be bits, got {udt.offset}"
+    assert int(udt.size) == 4 * 8, f"int udm size must be 32 bits, got {udt.size}"
 
     # user name preserved
     m2 = AbstractMember(offset=0x10, tinfo=int_ti, name="pCtx")
     udt2 = m2.get_udt_member()
-    assert udt2 is not None and udt2.name == "pCtx", f"user name lost: {udt2.name}"
+    assert udt2 is not None, "user member conversion returned None"
+    assert udt2.name == "pCtx", f"user name lost: {udt2.name}"
+
+    # Array members use the total array size in bits, not one element's size.
+    array_udm = m2.get_udt_member(array_size=3)
+    assert array_udm is not None, "array member conversion returned None"
+    assert int(array_udm.size) == 4 * 3 * 8, (
+        f"int[3] udm size must be 96 bits, got {array_udm.size}"
+    )
 
     # VoidMember gets a real byte tinfo (never None to IDA)
     v = VoidMember(offset=0)
     udt3 = v.get_udt_member()
     assert udt3 is not None, "VoidMember get_udt_member returned None"
     assert udt3.type is not None, "VoidMember udt type is None"
-    return f"auto={udt.name} user={udt2.name} void_sz={udt3.size}"
+    assert int(udt3.size) == 8, f"VoidMember must occupy 8 bits, got {udt3.size}"
+    return f"auto={udt.name} user={udt2.name} void_bits={udt3.size}"
+
+
+def t_udt_layout_bits() -> str:
+    """Build a live UDT without Qt and verify IDA interprets bit units correctly."""
+    from hexrays_pytools.domain.recon.member import AbstractMember, VoidMember
+    from hexrays_pytools.domain.types.udt_builder import create_padding_udt_member
+
+    int_ti = _parse("int x;")
+    assert int_ti is not None, "parse_decl(int) failed"
+
+    udt = idaapi.udt_type_data_t()
+    first = VoidMember(offset=0).get_udt_member()
+    middle = AbstractMember(offset=4, tinfo=int_ti, name="field_4").get_udt_member()
+    last = VoidMember(offset=8).get_udt_member()
+    assert first is not None
+    assert middle is not None
+    assert last is not None
+    udt.push_back(first)
+    udt.push_back(create_padding_udt_member(1, 3))
+    udt.push_back(middle)
+    udt.push_back(last)
+    offsets_bits = [int(x.offset) for x in udt]
+
+    tif = idaapi.tinfo_t()
+    assert tif.create_udt(udt, idaapi.BTF_STRUCT), "create_udt failed"
+    size = int(tif.get_size())
+    assert offsets_bits == [0, 8, 32, 64], (
+        f"live UDT offsets={offsets_bits}, expected [0, 8, 32, 64] bits"
+    )
+    # Natural struct alignment can round the 9-byte payload up (12 on the
+    # current IDA fixture). The regression we care about is that it is no
+    # longer collapsed to a 1-byte UDT by feeding byte counts to bit fields.
+    assert size >= 9, f"live UDT size={size}, expected at least 9"
+    return f"size={size} offsets_bits={offsets_bits}"
 
 
 def t_score() -> str:
@@ -186,6 +232,9 @@ def t_pack() -> str:
     assert tinfo is not None, "pack() returned None (UDT build or set_decl failed)"
     assert "PACK_TEST" in captured.get("cdecl", ""), "cdecl missing struct name"
     size = int(tinfo.get_size()) if hasattr(tinfo, "get_size") else -1
+    # Layout is byte@0, int@4, byte@8 with explicit gap padding: 9 bytes.
+    # The previous verifier accepted size=1, masking byte-vs-bit UDT bugs.
+    assert size == 9, f"PACK_TEST size={size}, expected exact packed size 9"
     return f"typedef installed size={size} cdecl_len={len(captured['cdecl'])}"
 
 
@@ -494,9 +543,10 @@ def t_swap_spaghetti() -> str:
             f"cond {cond_before}->{cond_after}: not inverted"
         )
     then_block = cif_after.ithen.cblock
-    assert int(then_block.size()) == 1 and int(then_block.front().op) == int(
-        idaapi.cit_return
-    ), "then-branch should hold exactly the return"
+    assert int(then_block.size()) == 1, "then-branch should hold exactly one statement"
+    assert int(then_block.front().op) == int(idaapi.cit_return), (
+        "then-branch should hold exactly the return"
+    )
     if not already_flattened:
         assert size_after > size_before, f"main block {size_before}->{size_after}, should grow"
     source = "hook(SilentIfSwapper)" if already_flattened else "visitor(direct)"
@@ -598,14 +648,20 @@ def t_negoffset_replace() -> str:
 def main() -> None:
     results["ida_version"] = idaapi.get_kernel_version()
     check("member.get_udt_member", t_get_udt_member)
+    check("udt.layout_bits", t_udt_layout_bits)
     check("member.score", t_score)
-    check("model.pack", t_pack)
-    check("model.set_decl", t_set_decl)
-    # finalize last — it writes to Local Types
-    check("model.finalize", t_finalize)
-    # paths 6-9
-    check("scanner.shallow", t_scanner_shallow)
-    check("scanner.chain", t_scanner_chain)
+    # IDALib/headless intentionally has no PySide6. StructureModel subclasses
+    # Qt's QAbstractTableModel, so those paths must be exercised by the GUI
+    # parity harness rather than reported as false failures here.
+    if os.environ.get("HXRPT_IDALIB") != "1":
+        check("model.pack", t_pack)
+        check("model.set_decl", t_set_decl)
+        # finalize last — it writes to Local Types
+        check("model.finalize", t_finalize)
+        # paths 6-7
+        check("scanner.shallow", t_scanner_shallow)
+        check("scanner.chain", t_scanner_chain)
+    # rename paths
     check("rename.other", t_rename_other)
     check("rename.outside", t_rename_outside)
     # paths 10-12
@@ -628,4 +684,5 @@ def main() -> None:
     idaapi.qexit(0 if ok == total else 1)
 
 
-main()
+if __name__ == "__main__":
+    main()

@@ -106,13 +106,48 @@ class Session:
 
     def _init_caches(self) -> None:
         """Initialize IDA-derived caches (imported EAs, demangled names, consts)."""
+        import idaapi  # type: ignore[import-not-found]
+        import idautils  # type: ignore[import-not-found]
+        import idc  # type: ignore[import-not-found]
+
+        from ..pure.name_mangle import sanitize_c_name
+        from .const import init_consts
+
         # Build the tinfo singletons for this IDB. The scanner engine
         # (Phase A.5+) depends on these; importing here is the natural
         # place to wire the dependency.
-        from .const import init_consts
+        self.imported_ea.clear()
+        self.demangled_names.clear()
+        self.touched_functions.clear()
+
+        def _import_cb(ea: int, name: str | None, ordinal: int) -> bool:  # noqa: ARG001
+            self.imported_ea.add(int(ea))
+            return True
+
+        try:
+            module_count = int(idaapi.get_import_module_qty())
+            for index in range(max(module_count, 0)):
+                idaapi.enum_import_names(index, _import_cb)
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logger.debug("Failed to enumerate imports: %s", exc)
+
+        try:
+            for address, raw_name in idautils.Names():
+                demangled = idc.demangle_name(str(raw_name), idc.INF_SHORT_DN)
+                if not demangled:
+                    continue
+                key = sanitize_c_name(str(demangled))
+                if key:
+                    self.demangled_names.setdefault(key, set()).add(int(address))
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logger.debug("Failed to build demangled-name cache: %s", exc)
 
         self.consts = init_consts()
-        logger.debug("Caches initialized (consts populated)")
+        logger.debug(
+            "Caches initialized (imports=%d, demangled=%d)",
+            len(self.imported_ea),
+            len(self.demangled_names),
+        )
 
     def _init_workspaces(self) -> None:
         """Initialize domain workspaces.

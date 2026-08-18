@@ -3,7 +3,7 @@
 The activate paths operate on a live cfunc/UDT and cannot be exercised with
 mocks. These tests cover the constructible surface and the check() guards.
 """
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import idaapi
 
@@ -45,7 +45,11 @@ def test_create_vtable_check_true_for_valid_ea() -> None:
     """CreateVtable.check is True when ea != BADADDR and DiscoveredVTable.check_address passes."""
     idaapi = __import__("idaapi")
     idaapi.BADADDR = 0xFFFFFFFFFFFFFFFF
-    assert CreateVtable.check(0x401000) is True
+    with patch(
+        "hexrays_pytools.domain.actions.struct_creation.DiscoveredVTable.check_address",
+        return_value=True,
+    ):
+        assert CreateVtable.check(0x401000) is True
 
 
 def test_create_vtable_check_false_for_badaddr() -> None:

@@ -104,7 +104,7 @@ class RemoveArgument(HexRaysPopupAction):
         if hx_view is None or hx_view.item.citype != idaapi.VDI_LVAR:
             return False
         local_variable = hx_view.item.get_lvar()
-        return bool(local_variable.is_arg_var)
+        return bool(local_variable.is_arg_var())
 
     def activate(self, ctx: Any) -> None:
         vu = idaapi.get_widget_vdui(ctx.widget)

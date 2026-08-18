@@ -14,6 +14,10 @@ import idaapi  # type: ignore[import-not-found]
 def create_padding_udt_member(offset: int, size: int) -> idaapi.udt_member_t:
     """Create a gap_<offset> padding udt_member.
 
+    ``offset`` and ``size`` are expressed in bytes by the reconstruction
+    model. IDA 9's ``udm_t.offset`` and ``udm_t.size`` are expressed in bits,
+    so convert at this boundary before handing the member to ``create_udt``.
+
     Bug fix (found by verification/verify_parity.py on IDA 9.4): the first
     version used ``idaapi.BT_BYTE`` which does not exist as a module-level
     constant in IDA 9.x — the correct constant is ``idaapi.BTF_BYTE``
@@ -23,10 +27,10 @@ def create_padding_udt_member(offset: int, size: int) -> idaapi.udt_member_t:
     """
     member = idaapi.udt_member_t()
     member.name = f"gap_{offset:X}"
-    member.offset = offset
+    member.offset = offset * 8
     # Padding type: byte array of `size` bytes
     pad_type = idaapi.tinfo_t()
     pad_type.create_array(idaapi.tinfo_t(idaapi.BTF_BYTE), size)
     member.type = pad_type
-    member.size = size
+    member.size = size * 8
     return member

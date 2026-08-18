@@ -114,17 +114,19 @@ class CreateNewField(HexRaysPopupAction):
             )
 
         new_member = idaapi.udt_member_t()
-        new_member.offset = offset * 8 + idx
+        new_member.offset = (offset + idx) * 8
         new_member.name = field_name
         new_member.type = field_tinfo
-        new_member.size = field_size
+        new_member.size = field_size * 8
         it = udt_data.insert(it, new_member)
 
         if idx > 0:
             udt_data.insert(it, create_padding_udt_member(offset, idx))
 
         struct_tinfo.create_udt(udt_data, idaapi.BTF_STRUCT)
-        struct_tinfo.set_numbered_type(idaapi.get_idati(), ordinal, idaapi.BTF_STRUCT, struct_name)
+        struct_tinfo.set_numbered_type(
+            idaapi.get_idati(), ordinal, idaapi.NTF_REPLACE, struct_name
+        )
         hx_view.refresh_view(True)
 
     @staticmethod
@@ -169,12 +171,16 @@ class CreateVtable(Action):
         ea = int(ctx.cur_ea)
         if not self.check(ea):
             return
-        # Build a minimal DiscoveredVTable — the function-pointer entries
-        # are populated inside import_to_structures() by reading the data
-        # at `ea` (which we store on `func_ea`).
-        vtable = DiscoveredVTable(offset=0, tinfo=None, name=f"vtable_{ea:X}", origin=0)
-        vtable.func_ea = ea  # type: ignore[attr-defined]
-        vtable.import_to_structures(ask=False)
+        vtable = DiscoveredVTable(
+            offset=0,
+            tinfo=None,
+            name="__vftable",
+            origin=0,
+            address=ea,
+        )
+        # Preserve upstream behavior: show the generated declaration before
+        # committing a new Local Type.
+        vtable.import_to_structures(ask=True)
         hx_view = idaapi.get_widget_vdui(ctx.widget) if hasattr(ctx, "widget") else None
         if hx_view is not None:
             hx_view.refresh_view(True)

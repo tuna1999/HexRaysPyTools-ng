@@ -14,19 +14,26 @@ import idc  # type: ignore[import-not-found]
 
 def is_code_ea(ea: int) -> bool:
     """Check if `ea` points to code, handling ARM thumb bit (mask 1)."""
-    return bool(idaapi.is_code(idaapi.get_full_flags(ea & ~1)))
+    checked_ea = int(ea)
+    if str(idaapi.inf_get_procname()) == "ARM":
+        checked_ea &= ~1
+    return bool(idaapi.is_code(idaapi.get_full_flags(checked_ea)))
 
 
 def get_ptr(ea: int) -> int:
-    """Read a pointer (4 or 8 bytes) at `ea`, stripping ARM thumb bit."""
-    flags = idaapi.get_full_flags(ea & ~1)
+    """Read one native-width pointer from ``ea``.
+
+    Pointer width is an architecture property, not a property of IDA's
+    current classification for the source address. In particular, vtable
+    slots in a partially analysed IDB can be untyped and still contain valid
+    64-bit pointers.
+    """
     if idaapi.inf_is_64bit():
-        return (
-            int(idaapi.get_qword(ea & ~1))
-            if idaapi.is_data(flags)
-            else int(idaapi.get_wide_dword(ea & ~1))
-        )
-    return int(idaapi.get_wide_dword(ea & ~1))
+        return int(idaapi.get_qword(ea))
+    ptr = int(idaapi.get_wide_dword(ea))
+    if str(idaapi.inf_get_procname()) == "ARM":
+        ptr &= ~1
+    return ptr
 
 
 def get_funcs_calling_address(ea: int) -> set[int]:
@@ -53,7 +60,9 @@ def is_imported_ea(ea: int, imported_ea: set[int]) -> bool:
     """
     if idc.get_segm_name(ea) == ".plt":
         return True
-    return (ea + int(idaapi.get_imagebase())) in imported_ea
+    # Session caches absolute EAs. All scanner callers also operate on live
+    # ctree/decompiler EAs, so keep one representation end-to-end.
+    return int(ea) in imported_ea
 
 
 def choose_virtual_func_address(

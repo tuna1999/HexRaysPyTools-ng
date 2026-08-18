@@ -175,8 +175,11 @@ class AbstractMember:
             tmp = idaapi.tinfo_t(member_tinfo)
             tmp.create_array(member_tinfo, array_size)
             udt_member.type = tmp
-        udt_member.offset = int(self.offset) - int(offset)
-        udt_member.size = int(self.size)
+        # Reconstruction offsets/sizes are stored in bytes; IDA 9 UDT
+        # members use bit offsets/sizes.
+        udt_member.offset = (int(self.offset) - int(offset)) * 8
+        element_count = int(array_size) if array_size else 1
+        udt_member.size = int(self.size) * element_count * 8
         return udt_member
 
     def activate(self, model: Any) -> None:

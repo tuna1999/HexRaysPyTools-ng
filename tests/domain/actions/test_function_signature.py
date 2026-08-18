@@ -76,10 +76,10 @@ def test_remove_argument_check_requires_arg_lvar() -> None:
     hx = MagicMock()
     hx.item.citype = idaapi.VDI_LVAR
     lvar = MagicMock()
-    lvar.is_arg_var = True
+    lvar.is_arg_var.return_value = True
     hx.item.get_lvar.return_value = lvar
     assert RemoveArgument().check(hx) is True
-    lvar.is_arg_var = False
+    lvar.is_arg_var.return_value = False
     assert RemoveArgument().check(hx) is False
     hx.item.citype = idaapi.VDI_EXPR
     assert RemoveArgument().check(hx) is False

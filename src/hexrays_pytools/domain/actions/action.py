@@ -70,8 +70,22 @@ class HexRaysXrefAction(Action):
     def check(self, hx_view: Any) -> bool:
         raise NotImplementedError
 
+    @staticmethod
+    def _is_local_types_widget(widget_type: int) -> bool:
+        """Accept both current and legacy Local Types widget constants."""
+        return widget_type in (
+            idaapi.BWN_LOCTYPS,
+            idaapi.BWN_TILVIEW,
+            idaapi.BWN_TILIST,
+        )
+
     def update(self, ctx: Any) -> int:
-        if ctx.widget_type in (idaapi.BWN_PSEUDOCODE, idaapi.BWN_TILIST):
+        if self._is_local_types_widget(ctx.widget_type):
+            # Local Types does not emit Hex-Rays' hxe_populating_popup event,
+            # so attach the action from the generic action update callback.
+            idaapi.attach_action_to_popup(ctx.widget, None, self.name, self.menu_path)
+            return int(idaapi.AST_ENABLE_FOR_WIDGET)
+        if ctx.widget_type == idaapi.BWN_PSEUDOCODE:
             return int(idaapi.AST_ENABLE_FOR_WIDGET)
         return int(idaapi.AST_DISABLE_FOR_WIDGET)
 
@@ -79,7 +93,7 @@ class HexRaysXrefAction(Action):
 class HexRaysPopupRequestHandler:
     """Wraps HexRaysPopupAction for the hxe_populating_popup event."""
 
-    def __init__(self, action: HexRaysPopupAction) -> None:
+    def __init__(self, action: HexRaysPopupAction | HexRaysXrefAction) -> None:
         self._action = action
 
     def handle(self, event: int, *args: Any) -> None:

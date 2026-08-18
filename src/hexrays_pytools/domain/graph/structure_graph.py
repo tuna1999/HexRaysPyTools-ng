@@ -58,7 +58,9 @@ class StructureGraph:
         `_calculate_edges` would record no edges for any pointer/array member.
         """
         while tinfo is not None and (tinfo.is_ptr() or tinfo.is_array()):
-            tinfo = tinfo.remove_ptr_or_array() if hasattr(tinfo, "remove_ptr_or_array") else None
+            # IDA 9 mutates tinfo in-place and returns bool here.
+            if not hasattr(tinfo, "remove_ptr_or_array") or not tinfo.remove_ptr_or_array():
+                return 0
         if tinfo is None:
             return 0
         if tinfo.is_udt() or tinfo.is_enum():

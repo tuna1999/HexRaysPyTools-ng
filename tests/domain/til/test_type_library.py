@@ -29,21 +29,39 @@ def test_create_type_fails_if_already_exists() -> None:
 
 
 def test_import_type_returns_ordinal_on_success() -> None:
-    """import_type returns the new ordinal on success."""
+    """import_type copies from the selected TIL and returns the copied ordinal."""
     idaapi = __import__("idaapi")
-    idc = __import__("idc")
-    idaapi.get_ordinal_count.return_value = 42
-    idc.import_type.return_value = 5  # not BADORD
-    assert import_type(MagicMock(), "MyType") == 42
+    source = MagicMock(name="source_til")
+    local = MagicMock(name="idati")
+    idaapi.get_idati.return_value = local
+    idaapi.copy_named_type.return_value = 42
+    assert import_type(source, "MyType") == 42
+    idaapi.copy_named_type.assert_called_once_with(local, source, "MyType")
 
 
 def test_import_type_returns_none_on_failure() -> None:
-    """import_type returns None if idc.import_type returns BADORD."""
+    """import_type returns None when copy_named_type reports ordinal 0."""
     idaapi = __import__("idaapi")
-    idc = __import__("idc")
-    idaapi.BADORD = -1
-    idc.import_type.return_value = -1
-    assert import_type(MagicMock(), "MissingType") is None
+    source = MagicMock(name="source_til")
+    local = MagicMock(name="idati")
+    idaapi.get_idati.return_value = local
+    idaapi.copy_named_type.return_value = 0
+    assert import_type(source, "MissingType") is None
+
+
+def test_import_type_local_returns_existing_ordinal() -> None:
+    """Selecting Local Types returns the existing ordinal without copying."""
+    idaapi = __import__("idaapi")
+    local = MagicMock(name="idati")
+    idaapi.get_idati.return_value = local
+    tif = MagicMock()
+    tif.get_named_type.return_value = True
+    tif.get_ordinal.return_value = 17
+    idaapi.tinfo_t.return_value = tif
+    idaapi.copy_named_type.reset_mock()
+
+    assert import_type(local, "Existing") == 17
+    idaapi.copy_named_type.assert_not_called()
 
 
 def test_choose_til_returns_none_on_cancel() -> None:

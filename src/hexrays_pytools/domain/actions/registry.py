@@ -176,9 +176,9 @@ class ActionRegistry:
         # idaapi.attach_action_to_popup() — that is what makes the action show
         # up in the context menu. Without this, the action is registered
         # (hotkey works) but never appears in the menu.
-        from .action import HexRaysPopupAction, HexRaysPopupRequestHandler
+        from .action import HexRaysPopupAction, HexRaysPopupRequestHandler, HexRaysXrefAction
 
-        if isinstance(action, HexRaysPopupAction) and self._hx_callbacks is not None:
+        if isinstance(action, (HexRaysPopupAction, HexRaysXrefAction)) and self._hx_callbacks is not None:
             self._hx_callbacks.register(
                 int(idaapi.hxe_populating_popup),
                 HexRaysPopupRequestHandler(action),

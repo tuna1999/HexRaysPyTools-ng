@@ -389,7 +389,9 @@ class StructureModel(QtCore.QAbstractTableModel):
             udm.name = str(getattr(item, "name", ""))
             udm.type = getattr(item, "tinfo", None)
             udm.size = (
-                int(getattr(item, "size", 0)) if getattr(item, "tinfo", None) is not None else 0
+                int(getattr(item, "size", 0)) * 8
+                if getattr(item, "tinfo", None) is not None
+                else 0
             )
             udt.push_back(udm)
         tinfo = idaapi.tinfo_t()

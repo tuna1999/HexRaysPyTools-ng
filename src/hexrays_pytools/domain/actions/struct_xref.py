@@ -15,7 +15,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import idaapi  # type: ignore[import-not-found]
-import idc  # type: ignore[import-not-found]
 
 from ..chooser import MyChoose
 from ..types.tinfo_utils import get_member_name, get_ordinal
@@ -58,15 +57,21 @@ class FindFieldXrefs(HexRaysXrefAction):
             if not self.check(hx_view):
                 return
             field_offset = int(item.e.m)
-            struct_type = item.e.x.type.remove_ptr_or_array()
+            struct_type = idaapi.tinfo_t(item.e.x.type)
+            struct_type.remove_ptr_or_array()
             ordinal = get_ordinal(struct_type)
             struct_name = str(struct_type.dstr())
             field_name = get_member_name(struct_type, field_offset)
-        elif ctx.widget_type == idaapi.BWN_TILIST:
-            ordinal = int(ctx.cur_struc.ordinal)
-            field_offset = int(ctx.cur_strmem.soff)
-            struct_name = str(idc.get_struc_name(int(ctx.cur_struc.id)))
-            field_name = str(idc.get_member_name(int(ctx.cur_strmem.id)))
+        elif self._is_local_types_widget(ctx.widget_type):
+            type_ref = ctx.type_ref
+            if type_ref is None or not type_ref.on_member() or not type_ref.is_udt():
+                return
+            ordinal = int(type_ref.ordinal)
+            # IDA 9 exposes the current Local Types UDT member as ``udm``;
+            # its offset uses bits, while XrefStorage keys use byte offsets.
+            field_offset = int(type_ref.udm.offset) // 8
+            struct_name = str(type_ref.tif.dstr())
+            field_name = str(type_ref.udm.name)
         else:
             return
 

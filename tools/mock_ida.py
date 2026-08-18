@@ -81,6 +81,7 @@ class _MockIdaModule:
     BWN_DISASM: int = 0x00000002
     BWN_FUNCS: int = 0x00000003
     BWN_LOCTYPS: int = 0x00000004
+    BWN_TILVIEW: int = BWN_LOCTYPS
     VDI_EXPR: int = 0x00000000
     VDI_FUNC: int = 0x00000001
     VDI_LVAR: int = 0x00000002

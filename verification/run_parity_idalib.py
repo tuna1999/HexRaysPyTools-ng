@@ -6,15 +6,15 @@ the new paths can be validated without launching the GUI.
 """
 from __future__ import annotations
 
+import os
 import sys
-import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "src"))
 sys.path.insert(0, str(HERE))
 
-import idapro  # type: ignore[import-not-found]
+import idapro  # type: ignore[import-not-found]  # noqa: E402
 
 BIN = HERE / "test_patterns.exe"
 
@@ -24,7 +24,9 @@ def main() -> int:
     if rc != 0:
         print(f"open_database rc={rc}")
         return 1
+    os.environ["HXRPT_IDALIB"] = "1"
     import verify_parity as vp
+
     vp.main()
     return 0
 

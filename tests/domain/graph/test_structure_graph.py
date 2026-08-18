@@ -92,6 +92,21 @@ def test_calculate_edges_extracts_member_type_ordinals() -> None:
     assert g.upward_edges.get(2) == [1]
 
 
+def test_get_ordinal_unwraps_pointer_in_place() -> None:
+    """remove_ptr_or_array returns bool in IDA 9; never replace tinfo with it."""
+    tinfo = MagicMock()
+    tinfo.is_ptr.side_effect = [True, False]
+    tinfo.is_array.return_value = False
+    tinfo.remove_ptr_or_array.return_value = True
+    tinfo.is_udt.return_value = True
+    tinfo.is_enum.return_value = False
+    tinfo.is_typeref.return_value = False
+    tinfo.get_ordinal.return_value = 7
+
+    assert StructureGraph._get_ordinal(tinfo) == 7
+    tinfo.remove_ptr_or_array.assert_called_once_with()
+
+
 def test_get_nodes_triggers_dfs() -> None:
     """get_nodes() runs DFS and returns the union of visited nodes.
 

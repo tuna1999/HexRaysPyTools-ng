@@ -9,11 +9,20 @@ from hexrays_pytools.infra.arch.arch import (
 
 def test_is_code_ea_strips_arm_thumb_bit() -> None:
     """is_code_ea(0x1001) should mask off the thumb bit before checking."""
-    is_code_ea(0x1001)
     idaapi = __import__("idaapi")
+    idaapi.inf_get_procname.return_value = "ARM"
+    is_code_ea(0x1001)
     # The mock records the call to get_full_flags with the masked address
     call_args = idaapi.get_full_flags.call_args
     assert call_args[0][0] == 0x1000  # 0x1001 & ~1
+
+
+def test_is_code_ea_preserves_odd_x86_address() -> None:
+    """Thumb normalization must not rewrite legitimate odd x86 EAs."""
+    idaapi = __import__("idaapi")
+    idaapi.inf_get_procname.return_value = "metapc"
+    is_code_ea(0x1001)
+    idaapi.get_full_flags.assert_called_with(0x1001)
 
 
 def test_is_code_ea_returns_bool() -> None:
@@ -24,18 +33,30 @@ def test_is_code_ea_returns_bool() -> None:
 
 def test_get_ptr_x86_uses_wide_dword() -> None:
     """get_ptr on 32-bit IDA reads a wide dword."""
-    __import__("idaapi").inf_is_64bit.return_value = False
+    idaapi = __import__("idaapi")
+    idaapi.inf_is_64bit.return_value = False
+    idaapi.inf_get_procname.return_value = "metapc"
     get_ptr(0x2000)
-    __import__("idaapi").get_wide_dword.assert_called()
+    idaapi.get_wide_dword.assert_called()
+
+
+def test_get_ptr_32bit_arm_clears_thumb_bit() -> None:
+    idaapi = __import__("idaapi")
+    idaapi.inf_is_64bit.return_value = False
+    idaapi.inf_get_procname.return_value = "ARM"
+    idaapi.get_wide_dword.return_value = 0x5001
+    assert get_ptr(0x2000) == 0x5000
 
 
 def test_get_ptr_x64_uses_qword() -> None:
-    """get_ptr on 64-bit IDA reads a qword for data, dword for code."""
+    """get_ptr on 64-bit IDA always reads one native-width qword."""
     idaapi = __import__("idaapi")
     idaapi.inf_is_64bit.return_value = True
-    idaapi.is_data.return_value = True
+    idaapi.get_qword.reset_mock()
+    idaapi.get_wide_dword.reset_mock()
     get_ptr(0x2000)
-    idaapi.get_qword.assert_called()
+    idaapi.get_qword.assert_called_once_with(0x2000)
+    idaapi.get_wide_dword.assert_not_called()
 
 
 def test_to_hex_64bit() -> None:

@@ -13,7 +13,6 @@ import logging
 from typing import Any
 
 import idaapi  # type: ignore[import-not-found]
-import idc  # type: ignore[import-not-found]
 
 from ..chooser import MyChoose
 
@@ -72,9 +71,22 @@ def create_type(name: str, declaration: str) -> bool:
 
 
 def import_type(library: Any, name: str) -> int | None:
-    """Import a named type from `library`. Returns new ordinal or None on failure."""
-    last_ordinal = int(idaapi.get_ordinal_count(idaapi.get_idati()))
-    type_id = idc.import_type(library, -1, name)
-    if type_id == idaapi.BADORD:
-        return None
-    return last_ordinal
+    """Copy a named type from ``library`` into the local IDB type library.
+
+    IDA 9's ``idc.import_type`` takes only ``(idx, type_name)`` and does not
+    accept a source ``til_t``. ``ida_typeinf.copy_named_type`` is the API that
+    preserves the selected source library and returns the copied ordinal.
+    """
+    idati = idaapi.get_idati()
+
+    # If the user selected Local Types, the type is already in the destination;
+    # return its existing ordinal instead of trying to copy it onto itself.
+    if library == idati:
+        tif = idaapi.tinfo_t()
+        if not tif.get_named_type(idati, name):
+            return None
+        ordinal = int(tif.get_ordinal())
+        return ordinal or None
+
+    ordinal = int(idaapi.copy_named_type(idati, library, name))
+    return ordinal or None

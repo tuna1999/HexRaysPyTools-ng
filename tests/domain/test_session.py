@@ -1,4 +1,5 @@
 """Test Session lifecycle."""
+
 from hexrays_pytools.domain.session import Session
 
 
@@ -57,7 +58,7 @@ def test_session_default_caches_are_empty() -> None:
 
 
 def test_session_round_trip() -> None:
-    """Session can be opened, mutated, closed, reopened."""
+    """Reopening refreshes IDA-derived caches instead of preserving stale values."""
     s = Session()
     s.idb_path = "/tmp/test.idb"
     s.open()
@@ -65,9 +66,32 @@ def test_session_round_trip() -> None:
     s.close()
     assert s.is_open is False
     s.open()
-    # Caches persist across open()/close() (they're not reset)
-    assert 0x1000 in s.imported_ea
+    assert 0x1000 not in s.imported_ea
     s.close()
+
+
+def test_init_caches_populates_imports_and_demangled_names() -> None:
+    import idaapi
+    import idautils
+    import idc
+
+    idaapi.get_import_module_qty.return_value = 1
+
+    def enum_imports(index, callback):  # type: ignore[no-untyped-def]
+        assert index == 0
+        callback(0x401000, "CreateFileW", 0)
+        return True
+
+    idaapi.enum_import_names.side_effect = enum_imports
+    idautils.Names.return_value = [(0x402000, "?Method@Thing@@QEAAHXZ")]
+    idc.demangle_name.return_value = "Thing::Method()"
+
+    s = Session()
+    s._init_caches()
+
+    assert s.imported_ea == {0x401000}
+    assert s.demangled_names["Thing_Method"] == {0x402000}
+    assert s.touched_functions == set()
 
 
 def test_session_open_initializes_recon_workspace() -> None:

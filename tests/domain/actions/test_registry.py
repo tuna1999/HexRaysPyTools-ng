@@ -142,6 +142,29 @@ def test_popup_actions_attached_to_populating_popup() -> None:
     assert isinstance(popup_handlers[0], HexRaysPopupRequestHandler)
 
 
+def test_xref_actions_attached_to_pseudocode_popup() -> None:
+    """HexRaysXrefAction also participates in pseudocode popup population."""
+    import idaapi
+
+    from hexrays_pytools.domain.actions.action import HexRaysXrefAction
+    from hexrays_pytools.domain.actions.hx_callback import HxCallbackManager
+
+    class _Xref(HexRaysXrefAction):
+        description = "X"
+
+        def activate(self, ctx):  # type: ignore[no-untyped-def]
+            pass
+
+        def check(self, hx_view):  # type: ignore[no-untyped-def]
+            return True
+
+    hx = HxCallbackManager()
+    r = ActionRegistry(hx_callbacks=hx)
+    r._register_one(_Xref())
+
+    assert len(hx._handlers[int(idaapi.hxe_populating_popup)]) == 1
+
+
 def test_popup_actions_not_attached_without_callback_manager() -> None:
     """Without an HxCallbackManager, popup actions register but don't attach.
 

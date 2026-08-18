@@ -43,6 +43,39 @@ def test_xref_storage_get_returns_empty_for_unknown() -> None:
     assert x.get_structure_info(ordinal=999, func_offset=0xFFF) == []
 
 
+def test_two_arg_update_preserves_all_fields_for_function() -> None:
+    """Collector snapshots keep every field, not only the final loop item."""
+    x = XrefStorage()
+    x.update(
+        0x100,
+        {
+            42: {
+                0x10: [(1, "line a", "R")],
+                0x18: [(2, "line b", "W")],
+            }
+        },
+    )
+
+    assert set(x._storage[42][0x100]) == {0x10, 0x18}
+
+
+def test_two_arg_update_removes_stale_ordinals_for_redecompiled_function() -> None:
+    """A fresh per-function snapshot removes ordinals no longer referenced."""
+    x = XrefStorage()
+    x.update(0x100, {42: {0x10: [(1, "old", "R")]}, 43: {0x20: [(2, "old", "R")]}})
+    x.update(0x100, {42: {0x18: [(3, "new", "W")]}})
+
+    assert 43 not in x._storage
+    assert x._storage[42][0x100] == {0x18: [(3, "new", "W")]}
+
+
+def test_two_arg_update_empty_snapshot_removes_function_everywhere() -> None:
+    x = XrefStorage()
+    x.update(0x100, {42: {0x10: [(1, "old", "R")]}})
+    x.update(0x100, {})
+    assert x._storage == {}
+
+
 def test_old_array_name_constant() -> None:
     """OLD_ARRAY_NAME matches the original plugin's name (for migration)."""
     assert OLD_ARRAY_NAME == "$HexRaysPyTools-ng:XrefStorage"

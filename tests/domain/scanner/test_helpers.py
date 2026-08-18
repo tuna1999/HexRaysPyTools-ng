@@ -57,17 +57,14 @@ def test_is_imported_ea_false_for_non_plt_not_in_cache() -> None:
     """Non-.plt address not in the import cache is not imported."""
     import idc  # type: ignore[import-not-found]
     idc.get_segm_name = MagicMock(return_value=".text")
-    idaapi.get_imagebase = MagicMock(return_value=0x400000)
     assert is_imported_ea(0x401000, imported_ea=set()) is False
 
 
 def test_is_imported_ea_true_when_in_cache() -> None:
-    """An address whose (ea + imagebase) is in the import cache is imported."""
+    """Session import cache stores the same absolute EAs used by ctree callers."""
     import idc  # type: ignore[import-not-found]
     idc.get_segm_name = MagicMock(return_value=".text")
-    idaapi.get_imagebase = MagicMock(return_value=0x400000)
-    # 0x401000 + 0x400000 = 0x801000 → in the cache
-    assert is_imported_ea(0x401000, imported_ea={0x801000}) is True
+    assert is_imported_ea(0x401000, imported_ea={0x401000}) is True
 
 
 # --- FunctionTouchVisitor -----------------------------------------------------

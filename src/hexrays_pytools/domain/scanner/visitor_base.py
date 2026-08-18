@@ -590,7 +590,7 @@ class RecursiveObjectUpwardsVisitor(RecursiveObjectVisitor, ObjectUpwardsVisitor
             return
         lvars = list(self._cfunc.get_lvars())
         idx = int(cexpr.v.idx)
-        if idx >= len(lvars) or not lvars[idx].is_arg_var:
+        if idx >= len(lvars) or not lvars[idx].is_arg_var():
             return
         func_ea = int(self._cfunc.entry_ea)
         arg_idx = idx

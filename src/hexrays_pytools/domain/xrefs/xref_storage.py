@@ -29,7 +29,9 @@ class XrefStorage:
     """In-memory cache of struct field xrefs, persisted via netnode."""
 
     def __init__(self) -> None:
-        self._storage: dict[int, dict[int, list[tuple[Any, ...]]]] = {}
+        # ordinal -> function RVA -> either legacy list payload or the
+        # current {field_offset: [xref tuples]} mapping.
+        self._storage: dict[int, dict[int, Any]] = {}
         self._node: Netnode | None = None
 
     def open(self) -> None:
@@ -113,11 +115,24 @@ class XrefStorage:
             # F2 form: update(func_offset, data_dict)
             func_offset = int(args[0])
             data = args[1]
-            for ord_key, fields in data.items():
-                if ord_key not in self._storage:
-                    self._storage[ord_key] = {}
-                for field_off, xrefs in fields.items():
-                    self._storage[ord_key][func_offset] = {field_off: list(xrefs)}
+            new_ordinals = {int(ord_key) for ord_key in data}
+
+            # Re-decompilation replaces the whole per-function snapshot. Drop
+            # ordinals that this function referenced previously but no longer
+            # references in the new ctree result.
+            for ord_key in list(self._storage):
+                funcs = self._storage[ord_key]
+                if func_offset in funcs and ord_key not in new_ordinals:
+                    del funcs[func_offset]
+                    if not funcs:
+                        del self._storage[ord_key]
+
+            for raw_ord_key, fields in data.items():
+                ord_key = int(raw_ord_key)
+                normalized_fields = {
+                    int(field_off): list(xrefs) for field_off, xrefs in fields.items()
+                }
+                self._storage.setdefault(ord_key, {})[func_offset] = normalized_fields
             return
         else:
             return
@@ -143,6 +158,8 @@ class XrefStorage:
                 except (AttributeError, RuntimeError, TypeError):
                     imagebase = 0
                 for func_offset, fields in funcs.items():
+                    if not isinstance(fields, dict):
+                        continue
                     if field_offset in fields:
                         func_ea = func_offset + imagebase
                         for occurrence_offset, line, usage_type in fields[field_offset]:
