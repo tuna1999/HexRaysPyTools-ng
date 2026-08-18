@@ -33,6 +33,34 @@ potential_negatives: dict[int, dict[int, Any]] = {}
 # --- Magic comment helpers ----------------------------------------------------
 
 
+def _my_cexpr_t(*args: Any, **kwargs: Any) -> Any:
+    """Build a cexpr_t — replacement for the bugged ``cexpr_t(op, x=..)`` ctor.
+
+    The SWIG constructor accepts neither keywords nor (op, x) positionally;
+    ported from v1.x ``core/helper.py:my_cexpr_t``. Builds a no-arg cexpr_t
+    and fills op/x/y/z through the documented _set_* setters.
+    """
+    if len(args) == 0:
+        return idaapi.cexpr_t()
+
+    if len(args) != 1:
+        raise NotImplementedError("my_cexpr_t takes at most one positional arg")
+
+    cexpr = idaapi.cexpr_t()
+    cexpr.thisown = False
+    if isinstance(args[0], idaapi.cexpr_t):
+        cexpr.assign(args[0])
+    else:
+        cexpr._set_op(args[0])
+        if "x" in kwargs:
+            cexpr._set_x(kwargs["x"])
+        if "y" in kwargs:
+            cexpr._set_y(kwargs["y"])
+        if "z" in kwargs:
+            cexpr._set_z(kwargs["z"])
+    return cexpr
+
+
 def _has_magic_comment(lvar: Any) -> bool:
     """Return True if the lvar carries a CONTAINING_RECORD magic comment."""
     return bool(re.search(r"```.*```", lvar.cmt))
@@ -222,14 +250,14 @@ class ReplaceVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         def _wrap_in_cast(inner: Any) -> None:
             tmp_tinfo = idaapi.tinfo_t()
             tmp_tinfo.create_ptr(parent.type)
-            new_cast = idaapi.cexpr_t(idaapi.cot_cast, x=inner)
+            new_cast = _my_cexpr_t(idaapi.cot_cast, x=inner)
             new_cast.thisown = False
             new_cast.type = tmp_tinfo
             expression.assign(new_cast)
 
         if diff:
             number = _make_num(diff)
-            new_add = idaapi.cexpr_t(idaapi.cot_add, x=new_call, y=number)
+            new_add = _my_cexpr_t(idaapi.cot_add, x=new_call, y=number)
             new_add.type = return_tinfo
             if parent.op == idaapi.cot_ptr:
                 _wrap_in_cast(new_add)

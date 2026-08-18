@@ -86,10 +86,16 @@ struct Inner { int a; int b; };
 struct Outer  { int header; char pad[4]; struct Inner inner; };  /* inner at offset 8 */
 
 __attribute__((noinline))
+void takes_inner_ptr(struct Inner* q) { g_sink = q->a; }
+
+__attribute__((noinline))
 void negative_offset_access(struct Inner* p) {
-    p->a = 1;
-    p->b = 2;
-    g_sink = p->a;
+    /* p actually points at Outer.inner (offset 8) inside a larger
+       allocation; code probes 8 elements past the end of Inner.
+       NOTE: Hex-Rays scales p+N to N in cot_add numval, and folds
+       p[N] to cot_idx — this call-arg form is the only shape that
+       survives as cot_add(var, num). */
+    takes_inner_ptr(p + 8);
 }
 
 /* --- main: force linker to keep all functions --- */

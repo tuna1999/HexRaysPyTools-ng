@@ -415,7 +415,7 @@ def t_swap_inverse_if() -> str:
         int(idaapi.cot_sle): int(idaapi.cot_sgt),
         int(idaapi.cot_slt): int(idaapi.cot_sge),
         int(idaapi.cot_sge): int(idaapi.cot_slt),
-        int(idaapi.cot_sgt): int(idaapi.cot_slt),
+        int(idaapi.cot_sgt): int(idaapi.cot_sle),
         int(idaapi.cot_eq): int(idaapi.cot_ne),
         int(idaapi.cot_ne): int(idaapi.cot_eq),
     }
@@ -474,7 +474,7 @@ def t_swap_spaghetti() -> str:
         int(idaapi.cot_sle): int(idaapi.cot_sgt),
         int(idaapi.cot_slt): int(idaapi.cot_sge),
         int(idaapi.cot_sge): int(idaapi.cot_slt),
-        int(idaapi.cot_sgt): int(idaapi.cot_slt),
+        int(idaapi.cot_sgt): int(idaapi.cot_sle),
         int(idaapi.cot_eq): int(idaapi.cot_ne),
         int(idaapi.cot_ne): int(idaapi.cot_eq),
     }
@@ -487,6 +487,98 @@ def t_swap_spaghetti() -> str:
     ), "then-branch should hold exactly the return"
     assert size_after > size_before, f"main block {size_before}->{size_after}, should grow"
     return f"block {size_before}->{size_after}, then=[return], cond {cond_before}->{cond_after}"
+
+
+# --- Group 4: Negative offsets (paths 13-15) ----------------------------------
+
+
+def t_negoffset_detect() -> str:
+    """AnalyseVisitor on negative_offset_access -> store has >=1 entry."""
+    from hexrays_pytools.domain.ctree.negative_offsets import AnalyseVisitor
+
+    ea = _resolve("negative_offset_access")
+    cfunc = _decompile(ea)
+    idx, lv = _find_first_ptr_lvar(cfunc)
+
+    candidates: dict[int, Any] = {idx: lv.type().get_pointed_object()}
+    store: dict[int, Any] = {}
+    visitor = AnalyseVisitor(candidates, store)
+    visitor.apply_to(cfunc.body, None)
+
+    assert len(store) >= 1, f"Expected >=1 store entry, got {len(store)}"
+    cand = store[idx]
+    # Hex-Rays scales p+N to numval=N (element units); p+8 with sizeof(Inner)==8
+    # trips the size<=numval check. p[N] would fold to cot_idx — never matched.
+    assert 8 in [int(o) for o in cand.offsets], f"scaled offset 8 missing: {cand.offsets}"
+    return f"store_entries={len(store)} offsets={list(cand.offsets)}"
+
+
+def _idb_ptr_to_inner() -> Any:
+    """Return a ptr-to-Inner tinfo built from the IDB-persisted named type.
+
+    _parse_magic_comment resolves the parent via get_named_type(idati), so
+    the Inner tinfo must also be IDB-persisted for find_deep_members to
+    match it (an in-memory tinfo from parse_decl never equals the named one).
+    """
+    inner = idaapi.tinfo_t()
+    assert inner.get_named_type(idaapi.get_idati(), "Inner"), "Inner not in Local Types"
+    ptr = idaapi.tinfo_t()
+    ptr.create_ptr(inner)
+    return ptr
+
+
+def t_negoffset_magic_comment() -> str:
+    """_parse_magic_comment on an lvar with '```Outer+8```' -> NegativeLocalInfo."""
+    from hexrays_pytools.domain.ctree.negative_offsets import _parse_magic_comment
+
+    _import_negoffset_types()
+
+    class _FakeLvar:
+        def __init__(self, tp: Any) -> None:
+            self.cmt = "```Outer+8```"
+            self._tp = tp
+
+        def type(self) -> Any:  # noqa: N802 — mirrors lvar_t API
+            return self._tp
+
+    result = _parse_magic_comment(_FakeLvar(_idb_ptr_to_inner()))
+    assert result is not None, "_parse_magic_comment returned None"
+    assert result.offset == 8, f"Expected offset=8, got {result.offset}"
+    assert result.member_name == "inner", f"Expected member 'inner', got {result.member_name!r}"
+    assert "Outer" in result.parent_tinfo.dstr(), f"parent: {result.parent_tinfo.dstr()}"
+    return f"parent={result.parent_tinfo.dstr()} member={result.member_name} offset={result.offset}"
+
+
+def t_negoffset_replace() -> str:
+    """ReplaceVisitor on a seeded magic-comment lvar -> CONTAINING_RECORD appears."""
+    from hexrays_pytools.domain.ctree.negative_offsets import ReplaceVisitor, _parse_magic_comment
+
+    _import_negoffset_types()
+    ea = _resolve("negative_offset_access")
+    cfunc = _decompile(ea)
+    idx, _ = _find_first_ptr_lvar(cfunc)
+
+    # Seed: resolve the magic comment for this lvar's type (ptr-to-Inner
+    # embedded at Outer+8). Duck-typed lvar — production reads .cmt/.type().
+    class _CommentLvar:
+        def __init__(self, tp: Any) -> None:
+            self.cmt = "```Outer+8```"
+            self._tp = tp
+
+        def type(self) -> Any:  # noqa: N802 — mirrors lvar_t API
+            return self._tp
+
+    info = _parse_magic_comment(_CommentLvar(_idb_ptr_to_inner()))
+    assert info is not None, "magic comment did not resolve — setup failed"
+
+    text_before = str(cfunc)
+    visitor = ReplaceVisitor({idx: info})
+    visitor.apply_to(cfunc.body, None)
+    text_after = str(cfunc)
+
+    assert "CONTAINING_RECORD" in text_after, f"no CONTAINING_RECORD: {text_after}"
+    assert text_after != text_before, "text unchanged after ReplaceVisitor"
+    return "contains_containing_record=True"
 
 
 def main() -> None:
@@ -506,6 +598,10 @@ def main() -> None:
     check("swap.inverse_if", t_swap_inverse_if)
     check("swap.persistence", t_swap_persistence)
     check("swap.spaghetti", t_swap_spaghetti)
+    # paths 13-15
+    check("negoffset.detect", t_negoffset_detect)
+    check("negoffset.magic_comment", t_negoffset_magic_comment)
+    check("negoffset.replace", t_negoffset_replace)
 
     _RESULTS_PATH.write_text(json.dumps(results, indent=2, default=str))
     ok = sum(1 for v in results["tests"].values() if v["ok"])
