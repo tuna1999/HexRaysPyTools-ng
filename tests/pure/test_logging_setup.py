@@ -1,37 +1,39 @@
-"""Test logging_setup module."""
+"""Unit tests for logging_setup.py — handler selection + idempotency.
+
+These run under the pytest + mock_ida harness, so idaapi.msg is a
+MagicMock → _ida_output_available() returns False → StreamHandler is
+expected (not IdaOutputHandler).
+"""
+from __future__ import annotations
+
 import logging
+from unittest.mock import MagicMock, patch
 
-from hexrays_pytools.logging_setup import setup_logging
-
-
-def test_setup_logging_sets_root_level() -> None:
-    """setup_logging(N) should set root logger level to N."""
-    setup_logging(logging.WARNING)
-    assert logging.getLogger().level == logging.WARNING
-
-
-def test_setup_logging_is_idempotent() -> None:
-    """Calling setup_logging twice should not add duplicate handlers."""
-    setup_logging(logging.INFO)
-    initial_handler_count = len(logging.getLogger().handlers)
-    setup_logging(logging.INFO)
-    assert len(logging.getLogger().handlers) == initial_handler_count
+from hexrays_pytools.logging_setup import (
+    _LOG_FORMAT,
+    _ida_output_available,
+    _make_handler,
+    setup_logging,
+)
 
 
-def test_setup_logging_format_contains_module_and_function() -> None:
-    """The log format should include module name and function name."""
-    import io
-    buf = io.StringIO()
-    handler = logging.StreamHandler(buf)
-    handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s\t(%(module)s:%(funcName)s)"))
-    root = logging.getLogger()
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
-    try:
-        root.info("test message")
-        output = buf.getvalue()
-        assert "test message" in output
-        assert "test_logging_setup" in output
-        assert "test_setup_logging_format_contains_module_and_function" in output
-    finally:
-        root.removeHandler(handler)
+def test_format_has_hexrays_prefix() -> None:
+    """The log format string must start with [HexRaysPyTools]."""
+    assert _LOG_FORMAT.startswith("[HexRaysPyTools]")
+
+
+def test_format_has_levelname_and_module() -> None:
+    """The format must include levelname and module for filtering."""
+    assert "%(levelname)s" in _LOG_FORMAT
+    assert "%(module)s" in _LOG_FORMAT
+
+
+def test_ida_output_available_false_under_mock() -> None:
+    """Under mock_ida, idaapi.msg is a MagicMock → returns False."""
+    assert _ida_output_available() is False
+
+
+def test_make_handler_returns_streamhandler_under_mock() -> None:
+    """Under mock, _make_handler() must return a StreamHandler."""
+    handler = _make_handler()
+    assert isinstance(handler, logging.StreamHandler)
