@@ -38,6 +38,7 @@ from .domain.actions.registry import ActionRegistry
 from .domain.browser.proxy_model import ProxyModel
 from .domain.browser.tree_model import TreeModel
 from .domain.session import Session
+from .logging_setup import setup_logging
 from .ui.widgets.class_viewer import ClassViewer
 from .ui.widgets.graph_viewer import StructureGraphViewer
 from .ui.widgets.structure_builder import StructureBuilder
@@ -71,6 +72,7 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
 
         self.session = Session()
         self.session.open()
+        setup_logging(self.session.log_level)
 
         # F1.b: wire widget factories into Session. This is the only legal
         # UI→domain wiring point in the 5-layer architecture. Domain actions

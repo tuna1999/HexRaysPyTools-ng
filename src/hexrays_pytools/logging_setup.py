@@ -41,7 +41,7 @@ def _ida_output_available() -> bool:
     instance.
     """
     try:
-        import idaapi  # type: ignore[import-not-found]
+        import idaapi
         from unittest.mock import Mock
 
         return callable(idaapi.msg) and not isinstance(idaapi.msg, Mock)
