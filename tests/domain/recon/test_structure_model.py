@@ -274,3 +274,201 @@ def test_get_unique_scanned_variables_filters_by_origin() -> None:
     assert sv_a in m.get_unique_scanned_variables(0)
     assert sv_b not in m.get_unique_scanned_variables(0)
     assert sv_b in m.get_unique_scanned_variables(8)
+
+
+def test_pack_substructure_replaces_selected_range(monkeypatch) -> None:
+    from PySide6 import QtCore
+
+    a = AbstractMember(offset=0, name="a")
+    b = AbstractMember(offset=4, name="b")
+    c = AbstractMember(offset=8, name="c")
+    model = StructureModel(items=[a, b, c])
+    packed_tinfo = MagicMock(name="packed_tinfo")
+    monkeypatch.setattr(model, "pack", MagicMock(return_value=packed_tinfo))
+
+    idx0 = model.index(0, 0, QtCore.QModelIndex())
+    idx1 = model.index(1, 0, QtCore.QModelIndex())
+    model.pack_substructure([idx0, idx1])
+
+    assert len(model.items) == 2
+    assert model.items[0].offset == 0
+    assert model.items[0].tinfo is packed_tinfo
+    assert model.items[1].name == "c"
+    model.pack.assert_called_once_with(0, 2)
+
+
+def test_unpack_substructure_expands_udt_members(monkeypatch) -> None:
+    from PySide6 import QtCore
+
+    idaapi = __import__("idaapi")
+    nested_tinfo = MagicMock()
+    nested_tinfo.is_udt.return_value = True
+
+    u0 = MagicMock()
+    u0.offset = 0
+    u0.name = "x"
+    u0.type = MagicMock()
+    u0.cmt = "cx"
+    u1 = MagicMock()
+    u1.offset = 32
+    u1.name = "y"
+    u1.type = MagicMock()
+    u1.cmt = "cy"
+
+    class _Udt(list):
+        pass
+
+    udt = _Udt([u0, u1])
+    monkeypatch.setattr(idaapi, "udt_type_data_t", lambda: udt)
+    nested_tinfo.get_udt_details.return_value = True
+    model = StructureModel(items=[AbstractMember(offset=0x20, tinfo=nested_tinfo, name="nested")])
+
+    idx = model.index(0, 0, QtCore.QModelIndex())
+    model.unpack_substructure([idx])
+
+    assert [(x.offset, x.name, x.cmt) for x in model.items] == [
+        (0x20, "x", "cx"),
+        (0x24, "y", "cy"),
+    ]
+
+
+def test_resolve_types_disables_worse_colliding_candidate() -> None:
+    better_tinfo = MagicMock()
+    worse_tinfo = MagicMock()
+    better_tinfo.get_size.return_value = 4
+    worse_tinfo.get_size.return_value = 8
+
+    # Upstream score semantics: larger score wins on collision.
+    class _Better(AbstractMember):
+        @property
+        def score(self) -> int:
+            return 10
+
+    class _Worse(AbstractMember):
+        @property
+        def score(self) -> int:
+            return 1
+
+    worse = _Worse(offset=0, tinfo=worse_tinfo, name="worse")
+    better = _Better(offset=0, tinfo=better_tinfo, name="better")
+    model = StructureModel(items=[worse, better])
+
+    model.resolve_types()
+
+    assert better.enabled is True
+    assert worse.enabled is False
+
+
+def test_load_struct_uses_named_tinfo_and_skips_padding(monkeypatch) -> None:
+    idaapi = __import__("idaapi")
+    tif = MagicMock()
+    tif.get_named_type.return_value = True
+    tif.is_udt.return_value = True
+    monkeypatch.setattr(idaapi, "tinfo_t", lambda: tif)
+    monkeypatch.setattr(idaapi, "ask_str", lambda *_a: "Loaded")
+
+    gap = MagicMock()
+    gap.offset = 0
+    gap.name = "gap_0"
+    gap.type = MagicMock()
+    gap.cmt = ""
+    field = MagicMock()
+    field.offset = 32
+    field.name = "field_4"
+    field.type = MagicMock()
+    field.cmt = "hello"
+
+    class _Udt(list):
+        pass
+
+    udt = _Udt([gap, field])
+    monkeypatch.setattr(idaapi, "udt_type_data_t", lambda: udt)
+    tif.get_udt_details.return_value = True
+    model = StructureModel()
+
+    model.load_struct()
+
+    assert [(x.offset, x.name, x.cmt) for x in model.items] == [(4, "field_4", "hello")]
+
+
+def test_recognize_shape_single_row_applies_pointer_to_origin_zero(monkeypatch) -> None:
+    from PySide6 import QtCore
+
+    idaapi = __import__("idaapi")
+    shape = MagicMock()
+    ptr = MagicMock()
+    monkeypatch.setattr(idaapi, "tinfo_t", lambda: ptr)
+    scanned = MagicMock()
+    item = AbstractMember(offset=0, name="a", origin=0)
+    item.scanned_variables = {scanned}
+    model = StructureModel(items=[item])
+    monkeypatch.setattr(model, "get_recognized_shape", MagicMock(return_value=shape))
+
+    idx = model.index(0, 0, QtCore.QModelIndex())
+    model.recognize_shape([idx])
+
+    ptr.create_ptr.assert_called_once_with(shape)
+    scanned.apply_type.assert_called_once_with(ptr)
+
+
+def test_recognize_shape_range_replaces_covered_members(monkeypatch) -> None:
+    from PySide6 import QtCore
+
+    idaapi = __import__("idaapi")
+    shape = MagicMock()
+    shape.get_size.return_value = 8
+    ptr = MagicMock()
+    monkeypatch.setattr(idaapi, "tinfo_t", lambda: ptr)
+    a = AbstractMember(offset=0x10, name="a", origin=0x10)
+    b = AbstractMember(offset=0x14, name="b", origin=0x10)
+    c = AbstractMember(offset=0x20, name="c")
+    scanned = MagicMock()
+    a.scanned_variables = {scanned}
+    model = StructureModel(items=[a, b, c])
+    monkeypatch.setattr(model, "get_recognized_shape", MagicMock(return_value=shape))
+
+    idx0 = model.index(0, 0, QtCore.QModelIndex())
+    idx1 = model.index(1, 0, QtCore.QModelIndex())
+    model.recognize_shape([idx0, idx1])
+
+    assert [(x.offset, x.tinfo) for x in model.items] == [(0x10, shape), (0x20, c.tinfo)]
+    scanned.apply_type.assert_called_once_with(ptr)
+
+
+def test_set_decls_parses_and_applies_pointer(monkeypatch) -> None:
+    idaapi = __import__("idaapi")
+    idaapi.idc_parse_types.return_value = 0
+    base = MagicMock(name="base")
+    base.get_named_type.return_value = True
+    ptr = MagicMock(name="ptr")
+    monkeypatch.setattr(idaapi, "tinfo_t", MagicMock(side_effect=[base, ptr]))
+    scanned = MagicMock()
+    item = AbstractMember(offset=0, origin=0)
+    item.scanned_variables = {scanned}
+    model = StructureModel(items=[item])
+
+    result = model.set_decls("Vec_int", "struct Vec_int { int x; };")
+
+    assert result is base
+    idaapi.idc_parse_types.assert_called_once_with("struct Vec_int { int x; };", 0)
+    base.get_named_type.assert_called_once_with(idaapi.get_idati(), "Vec_int")
+    ptr.create_ptr.assert_called_once_with(base)
+    scanned.apply_type.assert_called_once_with(ptr)
+
+
+def test_set_stl_type_renders_installs_and_clears(monkeypatch) -> None:
+    from hexrays_pytools.pure.result import Result
+
+    tmpl = MagicMock()
+    tmpl.get_decl_str.return_value = Result.ok(("Vec_int", "struct Vec_int { int x; };"))
+    model = StructureModel(
+        items=[AbstractMember(offset=0, name="a")], templated_types=tmpl
+    )
+    installed = MagicMock()
+    monkeypatch.setattr(model, "set_decls", MagicMock(return_value=installed))
+
+    model.set_stl_type("vector", ("int", "values"))
+
+    tmpl.get_decl_str.assert_called_once_with("vector", ["int", "values"])
+    model.set_decls.assert_called_once_with("Vec_int", "struct Vec_int { int x; };")
+    assert model.items == []

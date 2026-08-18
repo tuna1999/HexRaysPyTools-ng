@@ -20,7 +20,7 @@ to ``Session.recon``. The Structure Builder widget, when opened, calls
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .structure_model import StructureModel
@@ -36,7 +36,7 @@ class ReconWorkspace:
     One instance per Session.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, templated_types: Any | None = None) -> None:
         # F6: true lazy init — StructureModel (Qt-dependent) is constructed
         # on first .model access, not at workspace init. This keeps
         # Session.open() PySide6-free so unit tests can construct a
@@ -45,6 +45,7 @@ class ReconWorkspace:
         # scanner actions that check `workspace.model is None` still see a
         # model after first access (and the property always returns one).
         self._model: StructureModel | None = None
+        self._templated_types = templated_types
         # The primary struct offset the user is reconstructing. Scanners
         # read this as the `origin`` argument to SearchVisitor. Default 0
         # (no offset selected) — the StructureBuilder sets this on row click.
@@ -60,7 +61,7 @@ class ReconWorkspace:
         returns a non-None StructureModel in normal use.
         """
         if self._model is None:
-            self._model = _create_empty_model()
+            self._model = _create_empty_model(self._templated_types)
         return self._model
 
     def set_model(self, model: StructureModel) -> None:
@@ -91,7 +92,7 @@ class ReconWorkspace:
         return self._model.rowCount() == 0
 
 
-def _create_empty_model() -> StructureModel:
+def _create_empty_model(templated_types: Any | None = None) -> StructureModel:
     """Build an empty :class:`StructureModel` (true lazy via property accessor).
 
     ``workspace`` is imported by ``structure_model`` in the Qt model code
@@ -101,4 +102,4 @@ def _create_empty_model() -> StructureModel:
     """
     from .structure_model import StructureModel
 
-    return StructureModel()
+    return StructureModel(templated_types=templated_types)

@@ -27,7 +27,7 @@ from typing import Any
 import idaapi  # type: ignore[import-not-found]
 from PySide6 import QtCore, QtGui
 
-from .member import AbstractMember
+from .member import AbstractMember, Member
 
 logger = logging.getLogger(__name__)
 
@@ -514,67 +514,182 @@ class StructureModel(QtCore.QAbstractTableModel):
         return None
 
     def pack_substructure(self, indices: Iterable[QtCore.QModelIndex]) -> None:
-        """Pack selected items into a sub-structure.
-
-        Stubbed for the port: the original opens an ``ask_text`` dialog to
-        name the sub-structure and inserts a ``Member`` referencing it at
-        the lowest selected offset, removing the originals. End-to-end
-        verification requires real IDA — out of unit-test scope.
-        """
+        """Pack the selected contiguous row range into a new UDT member."""
         rows = sorted({idx.row() for idx in indices if 0 <= idx.row() < len(self._items)})
         if not rows:
             return
-        logger.debug("pack_substructure requested for rows %s", rows)
+        start, stop = rows[0], rows[-1] + 1
+        tinfo = self.pack(start, stop)
+        if tinfo is None:
+            return
+        offset = int(self._items[start].offset)
+        self.beginResetModel()
+        del self._items[start:stop]
+        keys = [m.offset for m in self._items]
+        insert_at = bisect.bisect_left(keys, offset)
+        self._items.insert(insert_at, Member(offset=offset, tinfo=tinfo))
+        self._refresh_collisions()
+        self.endResetModel()
 
     def unpack_substructure(self, indices: Iterable[QtCore.QModelIndex]) -> None:
-        """Unpack a sub-structure — replace a struct member with its UDT members.
-
-        Stubbed for the port. Requires Hex-Rays UDT introspection on the
-        selected member's type; left out of unit-test scope.
-        """
+        """Replace one UDT member with its constituent members."""
         rows = sorted({idx.row() for idx in indices if 0 <= idx.row() < len(self._items)})
-        if not rows:
+        if len(rows) != 1:
             return
-        logger.debug("unpack_substructure requested for rows %s", rows)
+        row = rows[0]
+        item = self._items[row]
+        if item.tinfo is None or not bool(item.tinfo.is_udt()):
+            return
+
+        udt_data = idaapi.udt_type_data_t()
+        if not item.tinfo.get_udt_details(udt_data):
+            return
+
+        expanded: list[AbstractMember] = []
+        base = int(item.offset)
+        for udm in udt_data:
+            member = Member(
+                offset=base + int(udm.offset) // 8,
+                tinfo=udm.type,
+                name=str(udm.name),
+                cmt=str(getattr(udm, "cmt", "") or ""),
+            )
+            expanded.append(member)
+
+        self.beginResetModel()
+        del self._items[row]
+        self._items.extend(expanded)
+        self._items.sort(key=lambda m: int(m.offset))
+        self._refresh_collisions()
+        self.endResetModel()
 
     def resolve_types(self) -> None:
-        """Resolve user-entered type strings into real tinfos.
+        """Disable lower-scoring candidates that collide with better ones."""
+        current_item: AbstractMember | None = None
+        current_score = 0
+        for item in self._items:
+            if not bool(item.enabled):
+                continue
+            if current_item is None:
+                current_item = item
+                current_score = int(item.score)
+                continue
 
-        Stubbed for the port: original uses ``idc.parse_decl`` + ``tinfo.deserialize``
-        to convert text in member ``name``/``cmt`` columns into concrete types.
-        """
-        logger.debug("resolve_types requested")
+            item_score = int(item.score)
+            if current_item.has_collision(item):
+                # Upstream keeps the higher-scoring candidate when two
+                # enabled members collide.
+                if item_score <= current_score:
+                    item.set_enabled(False)
+                    continue
+                current_item.set_enabled(False)
+            current_item = item
+            current_score = item_score
+
+        self._refresh_collisions()
+        self.layoutChanged.emit()
 
     def load_struct(self) -> None:
-        """Replace the current items with members of an existing Local Type.
+        """Load members from a named UDT in Local Types into the model."""
+        name = ""
+        tinfo = idaapi.tinfo_t()
+        while True:
+            entered = idaapi.ask_str(name, idaapi.HIST_TYPE, "Enter type:")
+            if entered is None:
+                return
+            name = str(entered)
+            if tinfo.get_named_type(idaapi.get_idati(), name) and bool(tinfo.is_udt()):
+                break
+            logger.warning("Invalid UDT name: %s", name)
 
-        Stubbed for the port: original opens a chooser of all local UDTs and
-        loads the selected struct's members as items. Requires real IDA.
-        """
-        logger.debug("load_struct requested")
+        udt_data = idaapi.udt_type_data_t()
+        if not tinfo.get_udt_details(udt_data):
+            return
+
+        loaded: list[AbstractMember] = []
+        for udm in udt_data:
+            offset = int(udm.offset) // 8
+            member_name = str(udm.name)
+            if member_name == f"gap_{offset:X}":
+                continue
+            loaded.append(
+                Member(
+                    offset=offset,
+                    tinfo=udm.type,
+                    name=member_name,
+                    cmt=str(getattr(udm, "cmt", "") or f"imported from {name}"),
+                )
+            )
+
+        self.beginResetModel()
+        self._items.extend(loaded)
+        self._items.sort(key=lambda m: int(m.offset))
+        self._refresh_collisions()
+        self.endResetModel()
 
     def recognize_shape(self, indices: Iterable[QtCore.QModelIndex]) -> None:
-        """Open the chooser for the user to pick a shape to apply to selection.
-
-        Stubbed for the port: original calls ``VariableScanner.NewShallowSearchVisitor``
-        on the structure with origin=0. End-to-end requires Hex-Rays ctree.
-        """
-        rows = sorted({idx.row() for idx in indices if 0 <= idx.row() < len(self._items)})
+        """Apply the inferred UDT shape to scanned variables and selected range."""
+        valid = [idx for idx in indices if 0 <= idx.row() < len(self._items)]
+        rows = sorted({idx.row() for idx in valid})
         if not rows:
             return
-        logger.debug("recognize_shape requested for rows %s", rows)
+        if len(rows) == 1:
+            tinfo = self.get_recognized_shape()
+            if tinfo is None:
+                return
+            ptr_tinfo = idaapi.tinfo_t()
+            ptr_tinfo.create_ptr(tinfo)
+            for scanned_var in self.get_unique_scanned_variables(origin=0):
+                scanned_var.apply_type(ptr_tinfo)
+            return
+
+        start, stop = rows[0], rows[-1] + 1
+        base = int(self._items[start].offset)
+        tinfo = self.get_recognized_shape(start, stop)
+        if tinfo is None:
+            return
+        ptr_tinfo = idaapi.tinfo_t()
+        ptr_tinfo.create_ptr(tinfo)
+        for scanned_var in self.get_unique_scanned_variables(base):
+            scanned_var.apply_type(ptr_tinfo)
+
+        size = int(tinfo.get_size())
+        self.beginResetModel()
+        self._items = [x for x in self._items if int(x.offset) < base or int(x.offset) >= base + size]
+        keys = [m.offset for m in self._items]
+        insert_at = bisect.bisect_left(keys, base)
+        self._items.insert(insert_at, Member(offset=base, tinfo=tinfo))
+        self._refresh_collisions()
+        self.endResetModel()
+
+    def set_decls(self, base_struct_name: str, cdecls: str) -> Any:
+        """Parse multiple declarations, load the base type, and apply its pointer."""
+        errors = int(idaapi.idc_parse_types(cdecls, 0))
+        if errors != 0:
+            logger.error("Could not parse structure declarations: %d errors", errors)
+            return None
+
+        tinfo = idaapi.tinfo_t()
+        if not tinfo.get_named_type(idaapi.get_idati(), base_struct_name):
+            logger.error("Parsed declarations but base type %r was not created", base_struct_name)
+            return None
+
+        ptr_tinfo = idaapi.tinfo_t()
+        if not ptr_tinfo.create_ptr(tinfo):
+            return None
+        for scanned_var in self.get_unique_scanned_variables():
+            scanned_var.apply_type(ptr_tinfo)
+        return tinfo
 
     def set_stl_type(self, key: str, args: tuple[str, ...]) -> None:
-        """Apply a templated (STL) type with user-supplied args.
-
-        Stubbed for the port: original uses the templated_types TOML config
-        to format the type with `args` and adds it to Local Types.
-        """
+        """Render and install one configured templated/STL type."""
         if self.tmpl_types is None:
             logger.warning("set_stl_type called but tmpl_types is None")
             return
-        struct_str = self.tmpl_types.get_struct(key)
-        if struct_str is None:
-            logger.warning("Unknown templated type key %r", key)
+        result = self.tmpl_types.get_decl_str(key, list(args))
+        if not result.is_ok:
+            logger.error("Could not generate templated type %r: %s", key, result.error)
             return
-        logger.debug("set_stl_type: key=%r args=%r", key, args)
+        name, cdecl = result.unwrap()
+        if self.set_decls(name, cdecl) is not None:
+            self.clear()

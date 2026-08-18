@@ -130,6 +130,13 @@ def test_model_constructed_on_first_access() -> None:
     assert w._model is not None
 
 
+def test_workspace_passes_templated_types_to_lazy_model() -> None:
+    tmpl = object()
+    w = ReconWorkspace(templated_types=tmpl)
+    assert w._model is None
+    assert w.model.tmpl_types is tmpl
+
+
 def test_model_is_singleton_per_workspace() -> None:
     """F6: subsequent .model accesses return cached instance."""
     w = ReconWorkspace()

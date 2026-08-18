@@ -163,12 +163,11 @@ class Session:
           existing data + auto-migrates the legacy array format.
         """
         from .recon.workspace import ReconWorkspace
+        from .templated.templated_types import TemplatedTypes
         from .xrefs.xref_storage import XrefStorage
 
-        self.recon = ReconWorkspace()
+        self.templated = TemplatedTypes(self.templated_types_file)
+        self.recon = ReconWorkspace(self.templated)
         self.xrefs = XrefStorage()
         self.xrefs.open()
-        # TemplatedTypes is the next module to wire (Phase 2.13). For
-        # now keep the slot None so the action registry doesn't break.
-        self.templated = None
-        logger.debug("Workspaces initialized (recon + xrefs)")
+        logger.debug("Workspaces initialized (recon + xrefs + templated types)")

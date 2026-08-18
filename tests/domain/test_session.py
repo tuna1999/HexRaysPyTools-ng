@@ -108,6 +108,8 @@ def test_session_open_initializes_recon_workspace() -> None:
     assert s.recon.model is not None
     assert s.recon.model.rowCount() == 0
     assert s.recon.main_offset == 0
+    assert s.templated is not None
+    assert s.recon.model.tmpl_types is s.templated
 
 
 def test_session_open_initializes_xref_storage() -> None:
