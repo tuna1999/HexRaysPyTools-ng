@@ -3,10 +3,16 @@ from hexrays_pytools.infra.idb.netnode import Netnode
 
 
 def test_netnode_creates_with_name() -> None:
-    """Netnode(name) creates a netnode via idaapi.netnode(name)."""
+    """Netnode(name) creates a netnode via idaapi.netnode(name, 0, True).
+
+    The 3-arg form is REQUIRED: netnode(name) alone only LOOKS UP an
+    existing node (do_create defaults to false), so writes silently
+    return False on a fresh IDB. Found by the parity test (E2E) — the
+    mock accepted the 1-arg call and hid the bug.
+    """
     Netnode("$test_name")
     idaapi = __import__("idaapi")
-    idaapi.netnode.assert_called_with("$test_name")
+    idaapi.netnode.assert_called_with("$test_name", 0, True)
 
 
 def test_netnode_exists_property() -> None:

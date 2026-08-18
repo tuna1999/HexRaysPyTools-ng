@@ -19,7 +19,10 @@ class Netnode:
 
     def __init__(self, name: str) -> None:
         self._name = name
-        self._node = idaapi.netnode(name)
+        # 3-arg form required: netnode(name) alone only LOOKS UP an existing
+        # node (do_create defaults to false) — writes then silently fail on a
+        # fresh IDB. Found by the E2E parity test; mocks hid this.
+        self._node = idaapi.netnode(name, 0, True)
 
     @property
     def exists(self) -> bool:

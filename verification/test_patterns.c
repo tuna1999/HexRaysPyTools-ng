@@ -5,6 +5,7 @@
    has a symbol to resolve. `volatile` forces every read/write to hit
    memory, defeating any residual optimizer cleverness at -O0. */
 volatile int g_sink = 0;
+volatile int g_sink2 = 0;
 
 /* --- Group 1: Scanner (struct pointer field access) --- */
 struct ScanTarget {
@@ -67,10 +68,15 @@ int swap_if_else(int cond, int x, int y) {
 }
 
 __attribute__((noinline))
+void take_int(int v) { g_sink = v; }   /* opaque noinline call */
+
+__attribute__((noinline))
 int spaghetti_pattern(int cond, int x) {
     if (cond) {
-        x = x * 2;
-        x = x + 1;
+        /* volatile write + opaque call: two side effects the compiler
+           cannot merge into one statement */
+        g_sink = x * 2;
+        take_int(x + 1);
     }
     return x;
 }

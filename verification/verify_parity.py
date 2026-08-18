@@ -77,11 +77,22 @@ def _find_first_ptr_lvar(cfunc: Any) -> tuple[int, Any]:
 
 
 def _find_if_citem(cfunc: Any) -> Any:
-    """Return the first cit_if citem in the function body."""
-    for item in cfunc.body:
-        if item.op == idaapi.cit_if:
-            return item.cif
-    raise AssertionError("No cit_if found in function body")
+    """Return the cif of the first cit_if in the function body (parentee walk)."""
+
+    class _IfFinder(idaapi.ctree_parentee_t):
+        def __init__(self) -> None:
+            idaapi.ctree_parentee_t.__init__(self)
+            self.found: Any = None
+
+        def visit_insn(self, insn: Any) -> int:
+            if insn.op == idaapi.cit_if and self.found is None:
+                self.found = insn.cif
+            return 0
+
+    f = _IfFinder()
+    f.apply_to(cfunc.body, None)
+    assert f.found is not None, "No cit_if found in function body"
+    return f.found
 
 
 def _import_negoffset_types() -> None:
@@ -379,6 +390,105 @@ def t_rename_outside() -> str:
     return f"lvar={info.lvar.name} name={info.name}"
 
 
+# --- Group 3: Swap-if (paths 10-12) -------------------------------------------
+
+
+def t_swap_inverse_if() -> str:
+    """inverse_if on swap_if_else -> condition lnot'd, branches swapped."""
+    from hexrays_pytools.domain.ctree.swap_if import inverse_if
+
+    ea = _resolve("swap_if_else")
+    cfunc = _decompile(ea)
+    cif = _find_if_citem(cfunc)
+    assert cif.ielse is not None, "swap_if_else should have an else branch"
+
+    cond_op_before = int(cif.expr.op)
+    ea_then, ea_else = int(cif.ithen.ea), int(cif.ielse.ea)
+
+    inverse_if(cif)
+
+    # idaapi.lnot() ALGEBRAICALLY SIMPLIFIES negated comparisons
+    # (!(a<=b) becomes a>b), so the result is cot_lnot OR the flipped
+    # comparison — both are a correct logical negation.
+    cond_op_after = int(cif.expr.op)
+    flips = {
+        int(idaapi.cot_sle): int(idaapi.cot_sgt),
+        int(idaapi.cot_slt): int(idaapi.cot_sge),
+        int(idaapi.cot_sge): int(idaapi.cot_slt),
+        int(idaapi.cot_sgt): int(idaapi.cot_slt),
+        int(idaapi.cot_eq): int(idaapi.cot_ne),
+        int(idaapi.cot_ne): int(idaapi.cot_eq),
+    }
+    assert cond_op_after == int(idaapi.cot_lnot) or flips.get(cond_op_before) == cond_op_after, (
+        f"cond {cond_op_before} -> {cond_op_after}: neither lnot nor flipped comparison"
+    )
+    assert int(cif.ithen.ea) == ea_else, "ithen not swapped"
+    assert int(cif.ielse.ea) == ea_then, "ielse not swapped"
+    return f"cond {cond_op_before}->{cond_op_after}, branches swapped"
+
+
+def t_swap_persistence() -> str:
+    """invert() toggle on/off via netnode; get_inverted/has_inverted agree."""
+    from hexrays_pytools.domain.ctree.swap_if import get_inverted, has_inverted, invert
+
+    ea = _resolve("swap_if_else")
+    cfunc = _decompile(ea)
+    cif = _find_if_citem(cfunc)
+    if_ea = int(cif.expr.ea)
+    rva = if_ea - int(idaapi.get_imagebase())
+
+    # Toggle ON.
+    invert(ea, if_ea)
+    assert rva in get_inverted(ea), f"RVA {rva:#x} not in {get_inverted(ea)}"
+    assert has_inverted(ea), "has_inverted should be True after toggle on"
+
+    # Toggle OFF.
+    invert(ea, if_ea)
+    assert rva not in get_inverted(ea), f"RVA still in {get_inverted(ea)} after off"
+    assert not has_inverted(ea), "has_inverted should be False after toggle off"
+    return f"toggle_on_off=ok rva={rva:#x}"
+
+
+def t_swap_spaghetti() -> str:
+    """SpaghettiVisitor on spaghetti_pattern -> if(!cond){return}, stmts spill."""
+    from hexrays_pytools.domain.ctree.swap_if import SpaghettiVisitor
+
+    ea = _resolve("spaghetti_pattern")
+    cfunc = _decompile(ea)
+    cond_before = int(_find_if_citem(cfunc).expr.op)
+
+    size_before = int(cfunc.body.cblock.size())
+    text_before = str(cfunc)
+
+    visitor = SpaghettiVisitor()
+    visitor.apply_to(cfunc.body, None)
+
+    # Re-find cif — the visitor rewired the ctree.
+    cif_after = _find_if_citem(cfunc)
+    size_after = int(cfunc.body.cblock.size())
+
+    assert str(cfunc) != text_before, "cfunc text unchanged after SpaghettiVisitor"
+    # lnot() simplifies negated comparisons (== -> !=), so accept lnot OR flip.
+    cond_after = int(cif_after.expr.op)
+    flips = {
+        int(idaapi.cot_sle): int(idaapi.cot_sgt),
+        int(idaapi.cot_slt): int(idaapi.cot_sge),
+        int(idaapi.cot_sge): int(idaapi.cot_slt),
+        int(idaapi.cot_sgt): int(idaapi.cot_slt),
+        int(idaapi.cot_eq): int(idaapi.cot_ne),
+        int(idaapi.cot_ne): int(idaapi.cot_eq),
+    }
+    assert cond_after == int(idaapi.cot_lnot) or flips.get(cond_before) == cond_after, (
+        f"cond {cond_before}->{cond_after}: not inverted"
+    )
+    then_block = cif_after.ithen.cblock
+    assert int(then_block.size()) == 1 and int(then_block.front().op) == int(
+        idaapi.cit_return
+    ), "then-branch should hold exactly the return"
+    assert size_after > size_before, f"main block {size_before}->{size_after}, should grow"
+    return f"block {size_before}->{size_after}, then=[return], cond {cond_before}->{cond_after}"
+
+
 def main() -> None:
     results["ida_version"] = idaapi.get_kernel_version()
     check("member.get_udt_member", t_get_udt_member)
@@ -392,6 +502,10 @@ def main() -> None:
     check("scanner.chain", t_scanner_chain)
     check("rename.other", t_rename_other)
     check("rename.outside", t_rename_outside)
+    # paths 10-12
+    check("swap.inverse_if", t_swap_inverse_if)
+    check("swap.persistence", t_swap_persistence)
+    check("swap.spaghetti", t_swap_spaghetti)
 
     _RESULTS_PATH.write_text(json.dumps(results, indent=2, default=str))
     ok = sum(1 for v in results["tests"].values() if v["ok"])
