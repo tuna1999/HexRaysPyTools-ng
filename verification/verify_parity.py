@@ -53,6 +53,50 @@ def _parse(t: str) -> Any:
     return tinfo
 
 
+def _resolve(name: str) -> int:
+    """Resolve a function name to its EA. Raises if not found."""
+    ea = int(idc.get_name_ea_simple(name))
+    assert ea != int(idaapi.BADADDR), f"Function '{name}' not found in IDB"
+    return ea
+
+
+def _decompile(ea: int) -> Any:
+    """Decompile the function at `ea`. Raises DecompilationFailure on error."""
+    cfunc = idaapi.decompile(ea)
+    assert cfunc is not None, f"Failed to decompile {hex(ea)}"
+    return cfunc
+
+
+def _find_first_ptr_lvar(cfunc: Any) -> tuple[int, Any]:
+    """Return (index, lvar) of the first pointer-typed local variable."""
+    lvars = list(cfunc.get_lvars())
+    for idx, lv in enumerate(lvars):
+        if lv.type().is_ptr():
+            return idx, lv
+    raise AssertionError(f"No pointer-typed lvar found in {cfunc.entry_ea:#x}")
+
+
+def _find_if_citem(cfunc: Any) -> Any:
+    """Return the first cit_if citem in the function body."""
+    for item in cfunc.body:
+        if item.op == idaapi.cit_if:
+            return item.cif
+    raise AssertionError("No cit_if found in function body")
+
+
+def _import_negoffset_types() -> None:
+    """Import Inner/Outer structs into the IDB for negative-offset tests.
+
+    Uses idc_parse_types (not _parse) so the types are IDB-persistent and
+    `tinfo_t.get_named_type` can resolve them.
+    """
+    decl = (
+        "struct Inner { int a; int b; }; "
+        "struct Outer { int header; char pad[4]; struct Inner inner; };"
+    )
+    idaapi.idc_parse_types(decl, 0)
+
+
 def t_get_udt_member() -> str:
     from hexrays_pytools.domain.recon.member import AbstractMember, VoidMember
 
