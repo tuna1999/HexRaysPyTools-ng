@@ -27,11 +27,19 @@ void scan_chain(struct ScanTarget* p) {
     g_sink = q->field_a;
 }
 
-/* --- Group 2: Rename (assignment chains + call args) --- */
+/* --- Group 2: Rename (assignment chains + call args) ---
+   NOTE: names are MEANINGFUL on purpose — _should_be_renamed() rejects
+   auto-generated names (a1, v2, ...), so 'a1 = a2' would never rename.
+   hide_value() is an opaque noinline sink: taking the address stops
+   Hex-Rays from copy-propagating the assignment away. */
 __attribute__((noinline))
-void rename_assign_chain(int real_name, int a2) {
-    int a1 = a2;                  /* RenameOther target: a1 <- a2 */
-    g_sink = a1 + real_name;
+void hide_value(int* sink) { g_sink = *sink; }
+
+__attribute__((noinline))
+void rename_assign_chain(int real_name, int passed_value) {
+    int target = passed_value;    /* RenameOther target: target <- passed_value */
+    hide_value(&target);          /* address escapes -> asg materializes */
+    g_sink = target + real_name;
 }
 
 __attribute__((noinline))
@@ -41,8 +49,9 @@ void callee_takes_arg(int meaningful) {
 
 __attribute__((noinline))
 void rename_call_arg(int real_value) {
-    int a1 = real_value;
-    callee_takes_arg(a1);         /* RenameOutside target: a1 <- "meaningful" */
+    int holder = real_value;
+    hide_value(&holder);          /* address escapes -> holder materializes */
+    callee_takes_arg(holder);     /* RenameOutside target: holder <- "meaningful" */
 }
 
 /* --- Group 3: Swap-if (if/else + spaghetti) --- */

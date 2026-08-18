@@ -219,6 +219,166 @@ def t_set_decl() -> str:
     return f"typedef={tinfo.dstr()} size={size}"
 
 
+# --- shared ctree plumbing for Groups 1-4 (paths 6-15) -----------------------
+
+
+class _ExprItem:
+    """Duck-typed stand-in for idaapi.ctree_item_t wrapping an expression.
+
+    SWIG 9.4 quirk: ctree_item_t defines the `it`/`e` properties twice —
+    the second (read-only lambda) shadows the first (with setter) — so
+    manual construction via `item.it = expr` raises AttributeError.
+    Production code only needs `citype`, `it`, and `get_lvar()`.
+    """
+
+    def __init__(self, cfunc: Any, expr: Any) -> None:
+        self.citype = idaapi.VDI_EXPR
+        self.it = expr
+        self._lvars = list(cfunc.get_lvars())
+
+    def get_lvar(self) -> Any:
+        return self._lvars[self.it.v.idx]
+
+
+def _last_parent(visitor: Any) -> Any:
+    """Return the most recent parent expression (SWIG-safe: no negative index)."""
+    n = visitor.parents.size()
+    return visitor.parents.at(n - 1).cexpr if n else None
+
+
+class _AsgVarFinder(idaapi.ctree_parentee_t):
+    """Find a cot_var whose direct parent is cot_asg."""
+
+    def __init__(self) -> None:
+        idaapi.ctree_parentee_t.__init__(self)
+        self.found: Any = None
+
+    def visit_expr(self, e: Any) -> int:
+        if e.op == idaapi.cot_var and self.found is None:
+            parent = _last_parent(self)
+            if parent is not None and parent.op == idaapi.cot_asg:
+                self.found = e
+        return 0
+
+
+class _CallArgFinder(idaapi.ctree_parentee_t):
+    """Find a cot_var passed as a direct argument of a cot_call.
+
+    Note: do NOT match by identity (`a is e`) — SWIG hands out distinct
+    proxies for the same cexpr_t, so `is` never matches. Scan the call's
+    arg list directly instead.
+    """
+
+    def __init__(self) -> None:
+        idaapi.ctree_parentee_t.__init__(self)
+        self.found: Any = None
+
+    def visit_expr(self, e: Any) -> int:
+        if e.op == idaapi.cot_call and self.found is None:
+            for a in e.a:
+                if a.op == idaapi.cot_var:
+                    self.found = a
+                    break
+        return 0
+
+
+# --- Group 1: Scanner (paths 6-7) ---------------------------------------------
+
+
+def t_scanner_shallow() -> str:
+    """NewShallowSearchVisitor on scan_simple -> >=2 members, offsets 0 and 4."""
+    from hexrays_pytools.domain.recon.structure_model import StructureModel
+    from hexrays_pytools.domain.recon.workspace import ReconWorkspace
+    from hexrays_pytools.domain.scanner.member_extractor import NewShallowSearchVisitor
+    from hexrays_pytools.domain.scanner.scanned_object import VariableObject
+    from hexrays_pytools.domain.session import Session
+
+    ea = _resolve("scan_simple")
+    cfunc = _decompile(ea)
+    idx, lv = _find_first_ptr_lvar(cfunc)
+    obj = VariableObject(lv, idx)
+
+    workspace = ReconWorkspace()
+    workspace.set_model(StructureModel())
+    session = Session()
+    session.open()
+
+    visitor = NewShallowSearchVisitor(cfunc, 0, obj, workspace, consts=session.consts)
+    visitor.process()
+
+    items = workspace.model.items
+    offsets = {int(m.offset) for m in items}
+    assert len(items) >= 2, f"Expected >=2 members, got {len(items)}"
+    assert {0, 4}.issubset(offsets), f"Offsets 0,4 missing from {sorted(offsets)}"
+    return f"members={len(items)} offsets={sorted(offsets)}"
+
+
+def t_scanner_chain() -> str:
+    """NewShallowSearchVisitor on scan_chain (q = p chain) -> offset-0 member."""
+    from hexrays_pytools.domain.recon.structure_model import StructureModel
+    from hexrays_pytools.domain.recon.workspace import ReconWorkspace
+    from hexrays_pytools.domain.scanner.member_extractor import NewShallowSearchVisitor
+    from hexrays_pytools.domain.scanner.scanned_object import VariableObject
+    from hexrays_pytools.domain.session import Session
+
+    ea = _resolve("scan_chain")
+    cfunc = _decompile(ea)
+    idx, lv = _find_first_ptr_lvar(cfunc)
+    obj = VariableObject(lv, idx)
+
+    workspace = ReconWorkspace()
+    workspace.set_model(StructureModel())
+    session = Session()
+    session.open()
+
+    visitor = NewShallowSearchVisitor(cfunc, 0, obj, workspace, consts=session.consts)
+    visitor.process()
+
+    items = workspace.model.items
+    offsets = {int(m.offset) for m in items}
+    assert len(items) >= 1, f"Expected >=1 member, got {len(items)}"
+    assert 0 in offsets, f"Offset 0 missing from {offsets}"
+    return f"members={len(items)} offsets={sorted(offsets)}"
+
+
+# --- Group 2: Rename (paths 8-9) ----------------------------------------------
+
+
+def t_rename_other() -> str:
+    """extract_rename_other_info on 'target = passed_value' -> name='passed_value'."""
+    from hexrays_pytools.domain.ctree.rename import extract_rename_other_info
+
+    ea = _resolve("rename_assign_chain")
+    cfunc = _decompile(ea)
+
+    finder = _AsgVarFinder()
+    finder.apply_to(cfunc.body, None)
+    assert finder.found is not None, "No cot_asg(cot_var) found"
+
+    info = extract_rename_other_info(cfunc, _ExprItem(cfunc, finder.found))
+    assert info is not None, "extract_rename_other_info returned None"
+    assert info.name == "passed_value", f"Expected name='passed_value', got {info.name!r}"
+    assert info.lvar.name == "target", f"Expected lvar 'target', got {info.lvar.name!r}"
+    return f"lvar={info.lvar.name} name={info.name}"
+
+
+def t_rename_outside() -> str:
+    """extract_rename_outside_info on callee_takes_arg(holder) -> name='meaningful'."""
+    from hexrays_pytools.domain.ctree.rename import extract_rename_outside_info
+
+    ea = _resolve("rename_call_arg")
+    cfunc = _decompile(ea)
+
+    finder = _CallArgFinder()
+    finder.apply_to(cfunc.body, None)
+    assert finder.found is not None, "No cot_call(cot_var arg) found"
+
+    info = extract_rename_outside_info(cfunc, _ExprItem(cfunc, finder.found))
+    assert info is not None, "extract_rename_outside_info returned None"
+    assert info.name == "meaningful", f"Expected name='meaningful', got {info.name!r}"
+    return f"lvar={info.lvar.name} name={info.name}"
+
+
 def main() -> None:
     results["ida_version"] = idaapi.get_kernel_version()
     check("member.get_udt_member", t_get_udt_member)
@@ -227,6 +387,11 @@ def main() -> None:
     check("model.set_decl", t_set_decl)
     # finalize last — it writes to Local Types
     check("model.finalize", t_finalize)
+    # paths 6-9
+    check("scanner.shallow", t_scanner_shallow)
+    check("scanner.chain", t_scanner_chain)
+    check("rename.other", t_rename_other)
+    check("rename.outside", t_rename_outside)
 
     _RESULTS_PATH.write_text(json.dumps(results, indent=2, default=str))
     ok = sum(1 for v in results["tests"].values() if v["ok"])
