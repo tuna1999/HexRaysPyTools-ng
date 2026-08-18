@@ -88,9 +88,8 @@ def test_ida_output_handler_falls_to_stderr_on_failure() -> None:
     # Patch idaapi.msg (imported lazily inside emit) to raise.
     mock_idaapi = MagicMock()
     mock_idaapi.msg.side_effect = RuntimeError("IDA shutting down")
-    with patch.dict("sys.modules", {"idaapi": mock_idaapi}):
-        with patch("sys.stderr.write") as mock_write:
-            handler.emit(record)
-            mock_write.assert_called_once()
-            written = mock_write.call_args[0][0]
-            assert "test message" in written
+    with patch.dict("sys.modules", {"idaapi": mock_idaapi}), patch("sys.stderr.write") as mock_write:
+        handler.emit(record)
+        mock_write.assert_called_once()
+        written = mock_write.call_args[0][0]
+        assert "test message" in written
