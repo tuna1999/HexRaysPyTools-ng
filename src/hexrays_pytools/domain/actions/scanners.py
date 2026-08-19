@@ -77,6 +77,23 @@ class Scanner(HexRaysPopupAction):
             return None
         return self._session.consts
 
+    @staticmethod
+    def _output(message: str) -> None:
+        """Emit scanner diagnostics at DEBUG level."""
+        logger.debug("%s", message)
+
+    @staticmethod
+    def _log_scan_start(kind: str, cfunc: Any, obj: Any, origin: int) -> None:
+        """Emit a scan-start marker at DEBUG level."""
+        func_ea = int(getattr(cfunc, "entry_ea", 0))
+        func_name = str(idaapi.get_name(func_ea) or f"sub_{func_ea:X}")
+        obj_name = str(getattr(obj, "name", "<unknown>"))
+        message = (
+            f"[HexRaysPyTools][{kind}] {obj_name} in {func_name} "
+            f"@ 0x{func_ea:X} (origin=0x{int(origin):X})"
+        )
+        Scanner._output(message)
+
 
 class ShallowScanVariable(Scanner):
     """Scan the selected variable once, depth-limited."""
@@ -85,17 +102,21 @@ class ShallowScanVariable(Scanner):
     hotkey = "F"
 
     def activate(self, ctx: Any) -> None:
+        self._output("[HexRaysPyTools][Scan] action invoked")
         hx_view = idaapi.get_widget_vdui(ctx.widget)
         cfunc = hx_view.cfunc
         workspace = self._workspace()
         if workspace is None:
-            logger.warning("ShallowScanVariable: no active session — skipping")
+            self._output("[HexRaysPyTools][Scan] skipped: no active reconstruction workspace")
             return
         if not self._can_be_scanned(cfunc, hx_view.item):
+            self._output("[HexRaysPyTools][Scan] skipped: selected item is not a scannable typed object")
             return
         obj = ScanObject.create(cfunc, hx_view.item)
         if obj is None:
+            self._output("[HexRaysPyTools][Scan] skipped: failed to create scan object")
             return
+        self._log_scan_start("Scan", cfunc, obj, int(workspace.main_offset))
         visitor = NewShallowSearchVisitor(
             cfunc, int(workspace.main_offset), obj, workspace, consts=self._consts()
         )
@@ -109,22 +130,37 @@ class DeepScanVariable(Scanner):
     hotkey = "Shift+Alt+F"
 
     def activate(self, ctx: Any) -> None:
+        self._output("[HexRaysPyTools][Deep Scan] action invoked")
         hx_view = idaapi.get_widget_vdui(ctx.widget)
         cfunc = hx_view.cfunc
         workspace = self._workspace()
         if workspace is None:
-            logger.warning("DeepScanVariable: no active session — skipping")
+            self._output("[HexRaysPyTools][Deep Scan] skipped: no active reconstruction workspace")
             return
         if not self._can_be_scanned(cfunc, hx_view.item):
+            self._output(
+                "[HexRaysPyTools][Deep Scan] skipped: selected item is not a scannable typed object"
+            )
+            return
+        # Capture the selected object before touching/decompiling callees.
+        # FunctionTouchVisitor can cause Hex-Rays to rebuild the current ctree,
+        # making hx_view.item stale. The upstream plugin follows this ordering
+        # for the same reason: create obj first, then pre-touch callees.
+        obj = ScanObject.create(cfunc, hx_view.item)
+        if obj is None:
+            self._output("[HexRaysPyTools][Deep Scan] skipped: failed to create scan object")
             return
         # Pre-decompile all callees so their arg types are known before the
         # recursive scan starts. FunctionTouchVisitor is best-effort — if it
         # fails, the deep scan still runs.
         imported_ea = self._session.imported_ea if self._session is not None else set()
-        FunctionTouchVisitor(cfunc, set(), imported_ea).process()
-        obj = ScanObject.create(cfunc, hx_view.item)
+        touched = self._session.touched_functions if self._session is not None else set()
+        if FunctionTouchVisitor(cfunc, touched, imported_ea).process():
+            hx_view.refresh_view(True)
+        current_cfunc = hx_view.cfunc
+        self._log_scan_start("Deep Scan", current_cfunc, obj, int(workspace.main_offset))
         visitor = NewDeepSearchVisitor(
-            cfunc, int(workspace.main_offset), obj, workspace, consts=self._consts()
+            current_cfunc, int(workspace.main_offset), obj, workspace, consts=self._consts()
         )
         visitor.process()
 

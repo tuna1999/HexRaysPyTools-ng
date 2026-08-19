@@ -158,8 +158,6 @@ class ClassViewer(idaapi.PluginForm):  # type: ignore[misc]
         # Enable set_arg only when ≥2 non-class rows are selected.
         if self.action_set_arg is not None:
             self.action_set_arg.setEnabled(True)
-        if self.action_rollback is not None:
-            self.action_rollback.setEnabled(False)  # noqa: ERA001
         indexes = list(self.class_tree.selectedIndexes())
         source_indexes = [self.proxy_model.mapToSource(idx) for idx in indexes if idx.column() == 0]
         if (

@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import idaapi  # type: ignore[import-not-found]
+import idc  # type: ignore[import-not-found]
 
 from ...infra.arch.arch import to_hex
 
@@ -58,17 +59,16 @@ class VirtualMethod:
         # If a parent was passed in the constructor, register it.
         if self.parent is not None and self.parent not in self.parents:
             self.parents.append(self.parent)
-        # Resolve ra_addresses — imagebase-relative addresses of every
-        # function matching this name (deduplicated). Mirrors original
-        # helper.get_virtual_func_addresses(self.name).
-        if self.name:
-            # ``get_virtual_func_addresses`` lives in
-            # ``core/classes.py`` in the original; the port keeps
-            # ``ra_addresses`` as an empty list (the original ``name``
-            # property derives the addresses from ``idc.get_name`` +
-            # ``helper.get_virtual_func_addresses`` which is non-trivial
-            # to mock). Subclass to wire in a custom implementation.
-            self.ra_addresses = []
+        if self.name and not self.ra_addresses:
+            image_base = int(idaapi.get_imagebase())
+            addresses: set[int] = set()
+            try:
+                direct = int(idc.get_name_ea_simple(self.name))
+                if direct != int(idaapi.BADADDR):
+                    addresses.add(direct)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+            self.ra_addresses = sorted(int(ea) - image_base for ea in addresses)
 
     def update(self, name: str, tinfo: Any) -> None:
         """Reset edit-state when the parent vtable pulls fresh data from local types."""
@@ -187,6 +187,8 @@ class VirtualMethod:
 
     def set_first_argument_type(self, name: str) -> None:
         """Set `this` pointer as first arg. Mirrors original lines 113-133."""
+        from ..types.tinfo_utils import is_legal_type
+
         func_data = idaapi.func_type_data_t()
         try:
             func_tinfo = self.tinfo.get_pointed_object()
@@ -207,10 +209,10 @@ class VirtualMethod:
             first_arg_tinfo = func_data[0].type
         except (IndexError, AttributeError):
             return
-        if (first_arg_tinfo.is_ptr() and first_arg_tinfo.get_pointed_object().is_udt()) or True:
-            # Match original: apply unless the type is clearly illegal.
-            # The original used helper.is_legal_type(); in our port we use
-            # the same heuristic (don't reject if it's a ptr-to-udt, etc.).
+        if (
+            first_arg_tinfo.is_ptr()
+            and first_arg_tinfo.get_pointed_object().is_udt()
+        ) or is_legal_type(first_arg_tinfo):
             try:
                 func_data[0].type = class_tinfo
                 func_data[0].name = "this"
@@ -305,6 +307,35 @@ class RegisteredVTable:
                 self.name = str(self.tinfo.dstr())
             except (AttributeError, RuntimeError):
                 self.name = ""
+
+    def populate_virtual_functions(
+        self,
+        demangled_names: dict[str, set[int]] | None = None,
+    ) -> None:
+        """Populate browser entries from the current vtable UDT."""
+        udt_data = idaapi.udt_type_data_t()
+        try:
+            if self.tinfo is None or not self.tinfo.get_udt_details(udt_data):
+                return
+        except (AttributeError, RuntimeError):
+            return
+        self.virtual_functions = []
+        for index, member in enumerate(udt_data):
+            vf = VirtualMethod(
+                name=str(member.name),
+                tinfo=member.type,
+                parent=self,
+                class_name=self.class_name,
+                offset=int(member.offset) // 8,
+            )
+            if demangled_names:
+                image_base = int(idaapi.get_imagebase())
+                candidates = demangled_names.get(vf.name, set())
+                if not candidates and self.class_name:
+                    candidates = demangled_names.get(f"{self.class_name}_{vf.name}", set())
+                if candidates:
+                    vf.ra_addresses = sorted(int(ea) - image_base for ea in candidates)
+            self.virtual_functions.append(vf)
 
     def update(self) -> None:
         """Re-pull vtable members from IDA Local Types. Mirrors original L179-192."""

@@ -77,7 +77,9 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
         # F1.b: wire widget factories into Session. This is the only legal
         # UI→domain wiring point in the 5-layer architecture. Domain actions
         # call these factories instead of importing widget classes directly.
-        self.session.class_viewer_factory = lambda: ClassViewer(ProxyModel(), TreeModel())
+        self.session.class_viewer_factory = lambda: ClassViewer(
+            ProxyModel(), TreeModel(self.session.demangled_names)
+        )
         self.session.structure_graph_viewer_factory = lambda graph: StructureGraphViewer(
             "Structure Graph", graph
         )

@@ -49,3 +49,16 @@ def test_has_function_match_with_re() -> None:
     m._classes = {"Foo": cls}
     assert m.has_function_match("Foo", r"doSome") is True
     assert m.has_function_match("Foo", r"nope") is False
+
+
+def test_tree_model_commit_delegates_and_rollback_rebuilds() -> None:
+    m = TreeModel()
+    cls = MagicMock()
+    m._classes = {"Foo": cls}
+    m.setupModelData = MagicMock()
+
+    m.commit()
+    m.rollback()
+
+    cls.update_local_type.assert_called_once_with()
+    m.setupModelData.assert_called_once_with()

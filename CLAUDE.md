@@ -10,34 +10,36 @@ Plugin IDA Pro (Python) hỗ trợ Hex-Rays decompiler: tái cấu trúc struct,
 
 ```bash
 # Cài đặt môi trường dev
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Chạy toàn bộ test + coverage gate (80%)
-pytest -v
+uv run pytest -v
 
 # Một file test cụ thể
-pytest tests/domain/test_session.py -v
-pytest tests/domain/actions/test_recast_action.py -v
+uv run pytest tests/domain/test_session.py -v
+uv run pytest tests/domain/actions/test_recast_action.py -v
 
 # Một test function
-pytest tests/domain/actions/test_registry.py::test_registry_count -v
+uv run pytest tests/domain/actions/test_registry.py::test_registry_count -v
 
 # Type check (strict mode)
-mypy --strict src/hexrays_pytools/
+uv run mypy --strict src/hexrays_pytools/
 
 # Lint
-ruff check src/hexrays_pytools/ tests/ tools/
-ruff check --fix <file>  # auto-fix
+uv run ruff check src/hexrays_pytools/ tests/ tools/
+uv run ruff check --fix <file>  # auto-fix
 
 # Build HCLI archive (output: dist/hexrays_pytools_ng-1.0.0.zip)
-python tools/build_plugin.py
+uv run python tools/build_plugin.py
 
 # Test trong IDA thật (headless) — cho các module đã omit khỏi coverage
 # KHÔNG có script tự động; cần tay cài đặt qua hcli và mở một IDB test
 hcli plugin install dist/hexrays_pytools_ng-1.0.0.zip
 ```
 
-`pytest` chạy được hoàn toàn không cần IDA nhờ `tools/mock_ida.py` (cài đặt qua `tests/conftest.py`).
+`uv run pytest` chạy được hoàn toàn không cần IDA nhờ `tools/mock_ida.py` (cài đặt qua `tests/conftest.py`).
+
+Project này dùng **uv** làm Python package/project manager. Không dùng `pip install` hoặc chạy `python`/tool trực tiếp cho workflow dev thông thường; ưu tiên `uv sync`, `uv add`/`uv remove`, và `uv run <command>` để bảo đảm môi trường theo `pyproject.toml`/`uv.lock`.
 
 ## Kiến trúc 5-layer
 
@@ -138,9 +140,9 @@ Các file `domain/ctree/{recast,rename,swap_if,negative_offsets}.py` thao tác t
 
 ## Trước khi commit
 
-- `pytest` pass, coverage ≥ 80% (gate enforce qua `pyproject.toml`).
-- `mypy --strict` clean.
-- `ruff check` clean.
+- `uv run pytest` pass, coverage ≥ 80% (gate enforce qua `pyproject.toml`).
+- `uv run mypy --strict` clean.
+- `uv run ruff check` clean.
 - Nếu đụng vào `plugin.py`/`hexrays_pytools_entry.py`, xác nhận `tests/test_plugin.py` vẫn pass — đây là guard cho các IDA 9.x contract bugs đã từng crash native.
 - Nếu thêm action mới: thêm vào `ACTION_CLASSES` + `_build_actions()` trong `registry.py`, đảm bảo count = 27 cập nhật nếu cần.
 

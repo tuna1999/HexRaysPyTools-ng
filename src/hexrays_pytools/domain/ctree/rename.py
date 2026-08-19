@@ -296,6 +296,6 @@ def rename_using_assert(hx_view: Any, cfunc: Any, ctree_item: Any) -> None:
     hx_view.refresh_view(True)
 
 
-# --- PropagateName: needs the recursive scanner engine (api.py) --------------
-# Ported once RecursiveObjectDownwardsVisitor lands. For now the action stays a
-# no-op stub gated off by extract_propagate_info returning None.
+# PropagateName lives in ``domain/actions/rename_action.py`` because it is
+# implemented directly on top of the recursive scanner visitor and needs the
+# action's Session settings. The rest of the rename operations stay here.

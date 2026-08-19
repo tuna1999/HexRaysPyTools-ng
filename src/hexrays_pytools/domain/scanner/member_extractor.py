@@ -137,6 +137,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
             return
 
         # 3. Persist.
+        self._emit_scan_hit(cexpr, obj, member)
         logger.debug(
             "  created member offset=%d tinfo=%s scanned=%s",
             int(member.offset),
@@ -146,6 +147,22 @@ class SearchVisitor(ObjectDownwardsVisitor):
         model = self._workspace.model
         if model is not None:
             model.add_row(member)
+
+    def _emit_scan_hit(self, cexpr: Any, obj: Any, member: Any) -> None:
+        """Log every discovered member candidate at DEBUG level."""
+        func_ea = int(getattr(self._cfunc, "entry_ea", 0))
+        func_name = str(idaapi.get_name(func_ea) or f"sub_{func_ea:X}")
+        source_ea = int(find_asm_address(cexpr, self.parents))
+        obj_name = str(getattr(obj, "name", "<unknown>"))
+        member_name = str(getattr(member, "name", "") or "<unnamed>")
+        member_tinfo = getattr(member, "tinfo", None)
+        type_name = str(member_tinfo) if member_tinfo is not None else type(member).__name__
+        message = (
+            f"[HexRaysPyTools][Scan Hit] {func_name}@0x{func_ea:X} "
+            f"source=0x{source_ea:X} object={obj_name} "
+            f"offset=0x{int(member.offset):X} member={member_name} type={type_name}"
+        )
+        logger.debug("%s", message)
 
     # --- Member construction ------------------------------------------------
 
@@ -193,6 +210,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
                     name=str(scan_obj.name),
                     origin=self._origin,
                     address=int(obj_ea),
+                    scanned_variables={scan_obj},
                 )
             if is_code_ea(int(obj_ea)):
                 cfunc = decompile_function(int(obj_ea))
@@ -208,7 +226,12 @@ class SearchVisitor(ObjectDownwardsVisitor):
                     to_hex(int(obj_ea)),
                     str(tinfo),
                 )
-                return Member(offset=int(offset), tinfo=tinfo, origin=self._origin)
+                return Member(
+                    offset=int(offset),
+                    tinfo=tinfo,
+                    origin=self._origin,
+                    scanned_variables={scan_obj},
+                )
 
         if (
             tinfo is None
@@ -216,7 +239,11 @@ class SearchVisitor(ObjectDownwardsVisitor):
             or (self._const_void_tinfo is not None and tinfo.equals_to(self._const_void_tinfo))
         ):
             logger.debug("    _get_member off=%d -> VoidMember", int(offset))
-            return VoidMember(offset=int(offset), origin=self._origin)
+            return VoidMember(
+                offset=int(offset),
+                origin=self._origin,
+                scanned_variables={scan_obj},
+            )
 
         if self._const_pchar_tinfo is not None and tinfo.equals_to(self._const_pchar_tinfo):
             tinfo = self._pchar_tinfo
@@ -229,7 +256,12 @@ class SearchVisitor(ObjectDownwardsVisitor):
             int(offset),
             str(tinfo),
         )
-        return Member(offset=int(offset), tinfo=tinfo, origin=self._origin)
+        return Member(
+            offset=int(offset),
+            tinfo=tinfo,
+            origin=self._origin,
+            scanned_variables={scan_obj},
+        )
 
     def _parse_call(
         self,

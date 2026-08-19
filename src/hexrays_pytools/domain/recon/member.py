@@ -80,7 +80,7 @@ class AbstractMember:
     origin: int = 0
     enabled: bool = True
     is_array: bool = False
-    scanned_variables: set[int] = field(default_factory=set)
+    scanned_variables: set[Any] = field(default_factory=set)
 
     @property
     def size(self) -> int:
@@ -100,13 +100,13 @@ class AbstractMember:
     def set_enabled(self, enable: bool) -> None:
         """Toggle enabled state; clearing the array flag (mirrors original)."""
         self.enabled = bool(enable)
-        if not self.enabled:
-            self.is_array = False
+        self.is_array = False
 
     def switch_array_flag(self) -> None:
         """Toggle ``is_array`` (VoidMember overrides to no-op)."""
         self.is_array = not self.is_array
 
+    @property
     def font(self) -> Any:
         """Return a QFont for the row (None means default). Subclasses override."""
         return None
@@ -202,22 +202,21 @@ class AbstractMember:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, AbstractMember):
             return NotImplemented
-        # Merge scanned_variables on match (original plugin behavior)
-        if self.offset == other.offset and self.size == other.size:
+        # Merge scanned_variables on match (original plugin behavior):
+        # equality is based on offset + type, not size. Distinct candidate
+        # types with the same width must remain separate rows for scoring.
+        if self.offset == other.offset and self.type_name == other.type_name:
             self.scanned_variables |= other.scanned_variables
             return True
         return False
 
     def __hash__(self) -> int:
-        return hash((self.offset, self.size))
+        return hash((self.offset, self.type_name))
 
     def __lt__(self, other: AbstractMember) -> bool:
-        # Pure offset comparison — type_name can be a MagicMock or other
-        # non-comparable object, and we only need a stable order for
-        # ``bisect.insort`` to find the right insertion point. Items with
-        # the same offset are treated as equal, which is fine for the
-        # model's sorted-by-offset invariant.
-        return int(self.offset) < int(other.offset)
+        if int(self.offset) != int(other.offset):
+            return int(self.offset) < int(other.offset)
+        return str(self.type_name) < str(other.type_name)
 
     @property
     def score(self) -> int:
@@ -268,7 +267,28 @@ class AbstractMember:
 class Member(AbstractMember):
     """A struct member with a known tinfo."""
 
-    pass
+    def __post_init__(self) -> None:
+        # Scanner offsets are relative to the scanned object. v1 stores
+        # candidates at ``offset + origin`` so scans started from a subobject
+        # land at the correct absolute structure offset.
+        self.offset = int(self.offset) + int(self.origin)
+        if self.name:
+            return
+        operand = "field"
+        if self.tinfo is not None:
+            try:
+                size = int(self.tinfo.get_size())
+                if bool(self.tinfo.is_floating()):
+                    operand = {1: "byte", 2: "word", 4: "float", 8: "double", 16: "ddouble"}.get(
+                        size, "field"
+                    )
+                elif bool(self.tinfo.is_integral()):
+                    operand = {1: "byte", 2: "word", 4: "dword", 8: "qword", 10: "tword", 16: "dqword"}.get(
+                        size, "field"
+                    )
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+        self.name = f"{operand}_{int(self.offset):x}"
 
 
 @dataclass
@@ -280,15 +300,18 @@ class VoidMember(AbstractMember):
     """
 
     tinfo: Any = None
-    name: str = "void"
+    name: str = ""
     is_array: bool = True
 
     def __post_init__(self) -> None:
+        self.offset = int(self.offset) + int(self.origin)
         # Ensure ``tinfo`` is always a real IDA tinfo — IDA's UDT API
         # rejects ``None`` with ValueError. Default to an unsigned byte
         # (``_BYTE``), matching the original VoidMember's behaviour.
         if self.tinfo is None:
             self.tinfo = _make_byte_tinfo()
+        if not self.name:
+            self.name = f"byte_{int(self.offset):x}"
 
     def type_equals_to(self, other_type: Any) -> bool:
         return True  # wildcard — always matches
@@ -296,3 +319,16 @@ class VoidMember(AbstractMember):
     def switch_array_flag(self) -> None:
         # Void members stay as arrays (you can't "un-array" a byte).
         pass
+
+    def set_enabled(self, enable: bool) -> None:
+        # v1 intentionally preserves the array flag for byte runs.
+        self.enabled = bool(enable)
+
+    @property
+    def font(self) -> Any:
+        try:
+            from PySide6 import QtGui
+
+            return QtGui.QFont("Consolas", 10, italic=True)
+        except (ImportError, AttributeError, TypeError):
+            return None

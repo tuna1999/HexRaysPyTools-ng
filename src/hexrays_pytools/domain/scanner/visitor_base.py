@@ -453,12 +453,12 @@ class RecursiveObjectVisitor(ObjectVisitor):
         self._debug_scan_tree.setdefault(head_node, set()).add(tail_node)
 
     def _dump_scan_tree(self) -> None:
-        """Pretty-print the recursive scan tree at INFO level (debug only)."""
+        """Pretty-print the recursive scan tree at DEBUG level."""
         self._debug_scan_tree_root = idaapi.get_name(int(self._cfunc.entry_ea))
         self._debug_message = [f"--- Scan Tree---\n{self._debug_scan_tree_root}"]
         self._prepare_debug_message()
         if self._debug_message:
-            logger.info("%s\n---------------", "\n".join(self._debug_message))
+            logger.debug("%s\n---------------", "\n".join(self._debug_message))
 
     def _prepare_debug_message(self, key: tuple[str, int] | None = None, level: int = 1) -> None:
         if key is None:
@@ -538,12 +538,34 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
             return
         idx, _ = get_call_argument_info(call_cexpr, arg_cexpr)
         if idx == -1:
+            logger.debug(
+                "[HexRaysPyTools][Deep Scan Call] caller=0x%X skipped: argument index not found",
+                int(self._cfunc.entry_ea),
+            )
             return
         func_ea = int(call_cexpr.x.obj_ea)
         if func_ea == int(idaapi.BADADDR):
+            logger.debug(
+                "[HexRaysPyTools][Deep Scan Call] caller=0x%X arg=%d skipped: indirect/BADADDR target",
+                int(self._cfunc.entry_ea),
+                idx,
+            )
             return
         if self._add_visit(func_ea, idx):
+            logger.debug(
+                "[HexRaysPyTools][Deep Scan Call] caller=0x%X -> callee=0x%X arg=%d",
+                int(self._cfunc.entry_ea),
+                func_ea,
+                idx,
+            )
             self._add_scan_tree_info(func_ea, idx)
+        else:
+            logger.debug(
+                "[HexRaysPyTools][Deep Scan Call] caller=0x%X -> callee=0x%X arg=%d skipped: already visited",
+                int(self._cfunc.entry_ea),
+                func_ea,
+                idx,
+            )
 
     def _recursive_process(self) -> None:
         """Walk this function, then drain the callee queue recursively."""
@@ -590,7 +612,10 @@ class RecursiveObjectUpwardsVisitor(RecursiveObjectVisitor, ObjectUpwardsVisitor
             return
         lvars = list(self._cfunc.get_lvars())
         idx = int(cexpr.v.idx)
-        if idx >= len(lvars) or not lvars[idx].is_arg_var():
+        if idx >= len(lvars):
+            return
+        is_arg_var = getattr(lvars[idx], "is_arg_var", False)
+        if not bool(is_arg_var() if callable(is_arg_var) else is_arg_var):
             return
         func_ea = int(self._cfunc.entry_ea)
         arg_idx = idx

@@ -71,7 +71,7 @@ def test_import_to_structures_no_entries_returns_false() -> None:
 
 
 def test_import_to_structures_calls_create_type_with_declaration() -> None:
-    """import_to_structures builds the C declaration and calls create_type."""
+    """import_to_structures preserves populated methods and registers printed UDT."""
     v = DiscoveredVTable(offset=0, address=0x401000)
 
     with patch(
@@ -82,9 +82,11 @@ def test_import_to_structures_calls_create_type_with_declaration() -> None:
          patch(
              "hexrays_pytools.domain.til.type_library.create_type",
              return_value=True,
-         ) as mock_create_type:
+         ) as mock_create_type, \
+         patch("hexrays_pytools.domain.recon.discovered_vtable.idaapi.print_tinfo", return_value="struct V {};"):
         idaapi = __import__("idaapi")
         idaapi.inf_is_64bit.return_value = False
+        idaapi.get_name.return_value = ""
         existing = MagicMock()
         existing.get_named_type.return_value = False
         idaapi.tinfo_t.return_value = existing
@@ -94,17 +96,17 @@ def test_import_to_structures_calls_create_type_with_declaration() -> None:
         assert mock_create_type.called
         assert mock_get_ptr.call_args_list[0].args == (0x401000,)
         assert mock_get_ptr.call_args_list[1].args == (0x401004,)
-        # First call args: (vtable_name, declaration)
         call_args = mock_create_type.call_args
         assert call_args[0][0].startswith("vtable_")
-        assert "void* fn_0;" in call_args[0][1]
-        assert "void* fn_4;" in call_args[0][1]
+        assert call_args[0][1] == "struct V {};"
+        assert [vf.offset for vf in v.virtual_functions] == [0, 4]
 
 
 def test_import_to_structures_x64_advances_eight_bytes() -> None:
     """64-bit vtables read native pointers at 8-byte slot boundaries."""
     idaapi = __import__("idaapi")
     idaapi.inf_is_64bit.return_value = True
+    idaapi.get_name.return_value = ""
     existing = MagicMock()
     existing.get_named_type.return_value = False
     idaapi.tinfo_t.return_value = existing
@@ -126,5 +128,17 @@ def test_import_to_structures_x64_advances_eight_bytes() -> None:
 
 
 def test_vtable_type_name_uses_table_address_not_struct_offset() -> None:
-    v = DiscoveredVTable(offset=0, address=0x401000)
-    assert v.type_name == "vtable_401000 *"
+    with patch("hexrays_pytools.domain.recon.discovered_vtable.idaapi.get_name", return_value=""):
+        v = DiscoveredVTable(offset=0, address=0x401000)
+        assert v.type_name == "vtable_401000 *"
+
+
+def test_vtable_type_name_prefers_nice_ida_name() -> None:
+    with patch(
+        "hexrays_pytools.domain.recon.discovered_vtable.idaapi.get_name",
+        return_value="MyClass_vftable",
+    ), patch(
+        "hexrays_pytools.domain.recon.discovered_vtable.idaapi.is_ident",
+        return_value=True,
+    ):
+        assert DiscoveredVTable(offset=0, address=0x401000).type_name == "MyClass_vftable *"

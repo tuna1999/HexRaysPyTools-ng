@@ -23,13 +23,27 @@ def test_abstract_member_size_from_tinfo() -> None:
 
 
 def test_member_eq_merges_scanned_variables() -> None:
-    """Two AbstractMembers with same offset+size are equal and merge scanned_variables."""
-    a = AbstractMember(offset=0x10)
+    """Two AbstractMembers with same offset+type are equal and merge scanned_variables."""
+    ta = MagicMock()
+    ta.dstr.return_value = "int"
+    tb = MagicMock()
+    tb.dstr.return_value = "int"
+    a = AbstractMember(offset=0x10, tinfo=ta)
     a.scanned_variables = {1, 2}
-    b = AbstractMember(offset=0x10)
+    b = AbstractMember(offset=0x10, tinfo=tb)
     b.scanned_variables = {3}
     assert a == b
     assert a.scanned_variables == {1, 2, 3}
+
+
+def test_member_eq_keeps_distinct_same_size_types() -> None:
+    ta = MagicMock()
+    ta.dstr.return_value = "int"
+    ta.get_size.return_value = 4
+    tb = MagicMock()
+    tb.dstr.return_value = "float"
+    tb.get_size.return_value = 4
+    assert AbstractMember(offset=0x10, tinfo=ta) != AbstractMember(offset=0x10, tinfo=tb)
 
 
 def test_member_lt_compares_offset() -> None:
@@ -121,12 +135,22 @@ def test_set_enabled_false_clears_array_flag() -> None:
     assert m.is_array is False
 
 
-def test_set_enabled_true_keeps_array_flag_state() -> None:
-    """Enabling does not touch is_array (stays whatever it was)."""
-    m = AbstractMember(offset=0, is_array=False)
+def test_set_enabled_true_clears_array_flag() -> None:
+    """Enabling clears is_array too, matching the original plugin."""
+    m = AbstractMember(offset=0, is_array=True)
     m.set_enabled(True)
     assert m.enabled is True
     assert m.is_array is False
+
+
+def test_void_member_set_enabled_preserves_array_flag() -> None:
+    v = VoidMember(offset=0, is_array=True)
+    v.set_enabled(False)
+    assert v.enabled is False
+    assert v.is_array is True
+    v.set_enabled(True)
+    assert v.enabled is True
+    assert v.is_array is True
 
 
 def test_switch_array_flag_toggles() -> None:
@@ -143,8 +167,17 @@ def test_switch_array_flag_toggles() -> None:
 
 
 def test_font_default_is_none() -> None:
-    """Default font() returns None (subclasses may override with QFont)."""
-    assert AbstractMember(offset=0).font() is None
+    """Default font property returns None (subclasses may override with QFont)."""
+    assert AbstractMember(offset=0).font is None
+
+
+def test_member_generates_operand_style_name_when_empty() -> None:
+    tinfo = MagicMock()
+    tinfo.get_size.return_value = 4
+    tinfo.is_floating.return_value = False
+    tinfo.is_integral.return_value = True
+    member = Member(offset=0x10, tinfo=tinfo)
+    assert member.name == "dword_10"
 
 
 def test_type_name_fallbacks() -> None:

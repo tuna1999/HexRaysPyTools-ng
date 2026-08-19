@@ -7,7 +7,7 @@ action metadata, the check predicates, and the no-crash contract for
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from hexrays_pytools.domain.actions.action import Action, HexRaysPopupAction
 from hexrays_pytools.domain.actions.scanners import (
@@ -51,6 +51,71 @@ def test_deep_scan_variable_instantiable() -> None:
     a = DeepScanVariable()
     assert a.name == "HexRaysPyTools:DeepScanVariable"
     a.activate(MagicMock())
+
+
+def test_deep_scan_captures_object_before_touching_ctree() -> None:
+    """Deep scan must not recreate its ScanObject after FunctionTouchVisitor refreshes ctree."""
+    import idaapi  # type: ignore[import-not-found]
+    from hexrays_pytools.domain.actions import scanners
+
+    session = MagicMock()
+    session.recon = MagicMock()
+    session.recon.main_offset = 0
+    session.imported_ea = set()
+    session.touched_functions = set()
+    action = DeepScanVariable(session=session)
+
+    ctx = MagicMock()
+    hx_view = MagicMock()
+    cfunc_before = MagicMock()
+    cfunc_before.entry_ea = 0x401000
+    cfunc_after = MagicMock()
+    cfunc_after.entry_ea = 0x401000
+    hx_view.cfunc = cfunc_before
+    scan_obj = MagicMock()
+    scan_obj.tinfo = MagicMock()
+
+    with patch.object(idaapi, "get_widget_vdui", return_value=hx_view), patch.object(
+        action, "_can_be_scanned", return_value=True
+    ), patch.object(scanners.ScanObject, "create", return_value=scan_obj) as create, patch.object(
+        scanners, "FunctionTouchVisitor"
+    ) as touch_cls, patch.object(scanners, "NewDeepSearchVisitor") as visitor_cls, patch.object(
+        action, "_log_scan_start"
+    ):
+        touch_cls.return_value.process.side_effect = lambda: setattr(hx_view, "cfunc", cfunc_after) or True
+        action.activate(ctx)
+
+    create.assert_called_once_with(cfunc_before, hx_view.item)
+    hx_view.refresh_view.assert_called_once_with(True)
+    visitor_cls.assert_called_once_with(
+        cfunc_after,
+        0,
+        scan_obj,
+        session.recon,
+        consts=session.consts,
+    )
+
+
+def test_scan_start_log_uses_debug(caplog) -> None:
+    """Scan markers are only visible when DEBUG logging is enabled."""
+    import idaapi  # type: ignore[import-not-found]
+
+    cfunc = MagicMock()
+    cfunc.entry_ea = 0x401000
+    obj = MagicMock()
+    obj.name = "this"
+    with patch.object(idaapi, "get_name", return_value="Foo_method"), caplog.at_level("DEBUG"):
+        Scanner._log_scan_start("Deep Scan", cfunc, obj, 0x20)
+
+    assert "[HexRaysPyTools][Deep Scan] this in Foo_method @ 0x401000 (origin=0x20)" in caplog.text
+
+
+def test_scanner_output_uses_debug(caplog) -> None:
+    """Scanner diagnostics respect the configurable DEBUG threshold."""
+    with caplog.at_level("DEBUG"):
+        Scanner._output("[HexRaysPyTools][Scan] action invoked")
+
+    assert "[HexRaysPyTools][Scan] action invoked" in caplog.text
 
 
 def test_recognize_shape_no_hotkey() -> None:

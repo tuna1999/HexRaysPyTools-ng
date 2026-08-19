@@ -8,10 +8,13 @@ in Local Types).
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import idaapi  # type: ignore[import-not-found]
+import idc  # type: ignore[import-not-found]
 
 from ...infra.arch.arch import get_ptr, is_code_ea, is_imported_ea
 from .member import AbstractMember
@@ -27,6 +30,13 @@ class VirtualFunction:
     tinfo: Any = None
     name: str = ""
     func_ea: int = 0
+    visited: bool = False
+
+    def show_location(self) -> None:
+        try:
+            idaapi.open_pseudocode(int(self.func_ea), 1)
+        except (AttributeError, RuntimeError):
+            idaapi.jumpto(int(self.func_ea))
 
 
 @dataclass
@@ -36,6 +46,11 @@ class ImportedVirtualFunction:
     offset: int
     tinfo: Any = None
     name: str = ""
+    func_ea: int = 0
+    visited: bool = False
+
+    def show_location(self) -> None:
+        idaapi.jumpto(int(self.func_ea))
 
 
 @dataclass
@@ -48,6 +63,156 @@ class DiscoveredVTable(AbstractMember):
 
     address: int = 0
     virtual_functions: list[Any] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # Same coordinate system as Member/VoidMember: scanner supplies a
+        # relative offset and ``origin`` identifies the containing subobject.
+        self.offset = int(self.offset) + int(self.origin)
+
+    def populate(self) -> None:
+        """Read the table and build typed virtual-function entries.
+
+        This restores the v1 Structure Builder workflow where double-clicking
+        a discovered vtable exposes its methods and lets the user scan them.
+        """
+        self.virtual_functions = []
+        ea = self._table_address()
+        if not ea:
+            return
+        ptr_size = 8 if idaapi.inf_is_64bit() else 4
+        current = ea
+        for _ in range(256):
+            try:
+                ptr = get_ptr(current)
+            except (RuntimeError, TypeError, ValueError):
+                break
+            if not ptr:
+                break
+            offset = current - ea
+            if is_imported_ea(ptr, set()):
+                tinfo = idaapi.tinfo_t()
+                try:
+                    idaapi.guess_tinfo(tinfo, int(ptr))
+                except (AttributeError, RuntimeError):
+                    pass
+                raw_name = idaapi.get_name(int(ptr))
+                func_name = raw_name if isinstance(raw_name, str) and raw_name else f"sub_{int(ptr):X}"
+                self.virtual_functions.append(
+                    ImportedVirtualFunction(
+                        offset=offset,
+                        tinfo=tinfo,
+                        name=func_name,
+                        func_ea=int(ptr),
+                    )
+                )
+            elif is_code_ea(ptr):
+                tinfo = None
+                try:
+                    cfunc = idaapi.decompile(int(ptr))
+                    if cfunc is not None and getattr(cfunc, "type", None) is not None:
+                        tinfo = idaapi.tinfo_t(cfunc.type)
+                except (AttributeError, RuntimeError, idaapi.DecompilationFailure):
+                    pass
+                raw_name = idaapi.get_name(int(ptr))
+                func_name = raw_name if isinstance(raw_name, str) and raw_name else f"sub_{int(ptr):X}"
+                self.virtual_functions.append(
+                    VirtualFunction(
+                        offset=offset,
+                        tinfo=tinfo,
+                        name=func_name,
+                        func_ea=int(ptr),
+                    )
+                )
+            else:
+                break
+            current += ptr_size
+
+    def scan_virtual_function(self, index: int, workspace: Any) -> None:
+        """Deep-scan the first argument of one virtual function into workspace."""
+        if not (0 <= int(index) < len(self.virtual_functions)):
+            return
+        entry = self.virtual_functions[int(index)]
+        if isinstance(entry, ImportedVirtualFunction):
+            logger.info("Ignoring imported virtual function at 0x%X", entry.func_ea)
+            return
+        try:
+            cfunc = idaapi.decompile(int(entry.func_ea))
+        except (AttributeError, RuntimeError, idaapi.DecompilationFailure):
+            logger.warning("Failed to decompile virtual function at 0x%X", entry.func_ea)
+            return
+        if cfunc is None:
+            return
+        args = list(getattr(cfunc, "arguments", []))
+        lvars = list(cfunc.get_lvars()) if hasattr(cfunc, "get_lvars") else []
+        if not args or not lvars:
+            return
+
+        from ..const import init_consts
+        from ..scanner.member_extractor import NewDeepSearchVisitor
+        from ..scanner.scanned_object import VariableObject
+
+        obj = VariableObject(lvars[0], 0)
+        target_workspace = workspace
+        if not hasattr(target_workspace, "model"):
+            target_workspace = SimpleNamespace(model=workspace)
+        NewDeepSearchVisitor(
+            cfunc,
+            int(self.offset),
+            obj,
+            target_workspace,
+            consts=init_consts(),
+        ).process()
+        entry.visited = True
+
+    def scan_virtual_functions(self, workspace: Any) -> None:
+        for index in range(len(self.virtual_functions)):
+            self.scan_virtual_function(index, workspace)
+
+    def activate(self, model: Any) -> None:
+        """Open a chooser for virtual functions, matching the original UX."""
+        if not self.virtual_functions:
+            self.populate()
+        if not self.virtual_functions:
+            return
+
+        from ..chooser import MyChoose
+
+        owner = self
+
+        class VirtualTableChoose(MyChoose):
+            def __init__(self, items: list[Any]) -> None:
+                super().__init__(
+                    items,
+                    "Select Virtual Function",
+                    [["Address", 12], ["Name", 24], ["Declaration", 48]],
+                    13,
+                )
+                self.popup_names = ["Scan All", "-", "Scan", "-"]
+
+            def OnInsertLine(self) -> None:  # noqa: N802 - IDA Choose API
+                owner.scan_virtual_functions(model)
+
+            def OnEditLine(self, n: int) -> None:  # noqa: N802 - IDA Choose API
+                owner.scan_virtual_function(int(n), model)
+
+            def OnGetIcon(self, n: int) -> int:  # noqa: N802 - IDA Choose API
+                return 32 if owner.virtual_functions[n].visited else 160
+
+        items = [
+            [
+                f"0x{int(vf.func_ea):X}",
+                str(vf.name),
+                str(vf.tinfo.dstr()) if getattr(vf, "tinfo", None) is not None and hasattr(vf.tinfo, "dstr") else "",
+            ]
+            for vf in self.virtual_functions
+        ]
+        chooser = VirtualTableChoose(items)
+        index = chooser.Show(True)
+        if index is None or int(index) < 0 or int(index) >= len(self.virtual_functions):
+            return
+        entry = self.virtual_functions[int(index)]
+        entry.visited = True
+        entry.show_location()
 
     @property
     def size(self) -> int:
@@ -65,8 +230,66 @@ class DiscoveredVTable(AbstractMember):
     def _local_type_name(self) -> str:
         ea = self._table_address()
         if ea:
+            raw = idaapi.get_name(ea)
+            raw_name = raw if isinstance(raw, str) else ""
+            if raw_name and bool(idaapi.is_ident(raw_name)):
+                if raw_name.startswith("off_"):
+                    return "vtbl" + raw_name[3:]
+                if "table" in raw_name.lower() or "vftable" in raw_name.lower():
+                    return raw_name
+                return "vtbl_" + raw_name
+            try:
+                demangled = idc.demangle_name(raw_name, idc.INF_SHORT_DN)
+            except (AttributeError, RuntimeError):
+                demangled = None
+            if demangled:
+                cleaned = str(demangled).replace("const ", "").replace("::_vftable", "_vtbl")
+                cleaned = re.sub(r"[^0-9A-Za-z_:]", "_", cleaned).strip("_")
+                if cleaned:
+                    return cleaned.replace("::", "_")
             return f"vtable_{ea:X}"
         return f"vtable_{int(self.offset):X}"
+
+    def _create_tinfo(self) -> Any:
+        """Build a typed vtable UDT from the populated virtual functions."""
+        if not self.virtual_functions:
+            self.populate()
+        if not self.virtual_functions:
+            return None
+        udt_data = idaapi.udt_type_data_t()
+        ptr_size = 8 if idaapi.inf_is_64bit() else 4
+        used_names: set[str] = set()
+        for index, function in enumerate(self.virtual_functions):
+            member = idaapi.udm_t()
+            raw_name = str(function.name or f"fn_{int(function.offset):X}")
+            name = re.sub(r"\W", "_", raw_name).strip("_") or f"fn_{int(function.offset):X}"
+            if name in used_names:
+                name = f"{name}_{index}"
+            used_names.add(name)
+            member.name = name
+            member.offset = int(function.offset) * 8
+            member.size = ptr_size * 8
+            member_tinfo = getattr(function, "tinfo", None)
+            try:
+                if member_tinfo is not None and member_tinfo.is_func():
+                    ptr_tinfo = idaapi.tinfo_t()
+                    ptr_tinfo.create_ptr(member_tinfo)
+                    member_tinfo = ptr_tinfo
+            except (AttributeError, RuntimeError):
+                member_tinfo = None
+            if member_tinfo is None:
+                member_tinfo = idaapi.tinfo_t()
+                try:
+                    void_tinfo = idaapi.tinfo_t(idaapi.BTF_VOID)
+                    member_tinfo.create_ptr(void_tinfo)
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    return None
+            member.type = member_tinfo
+            udt_data.push_back(member)
+        final_tinfo = idaapi.tinfo_t()
+        if not final_tinfo.create_udt(udt_data, idaapi.BTF_STRUCT):
+            return None
+        return final_tinfo
 
     @staticmethod
     def check_address(ea: int) -> bool:
@@ -100,10 +323,8 @@ class DiscoveredVTable(AbstractMember):
     def import_to_structures(self, ask: bool = False) -> bool:
         """Register this vtable as a Local Type.
 
-        Reads function pointers from ``self.address`` (or the legacy dynamic
-        ``self.func_ea`` field), builds a UDT with one
-        ``void*`` field per pointer, and registers it as
-        ``vtable_<hex_offset>``.
+        Reads function pointers from ``self.address`` and preserves discovered
+        virtual-function signatures when constructing the Local Type.
 
         Args:
             ask: If True, prompt the user with the generated C declaration
@@ -120,34 +341,19 @@ class DiscoveredVTable(AbstractMember):
         if existing.get_named_type(idaapi.get_idati(), vtable_name):
             return True
 
-        # Read function pointers (best-effort; gaps handled).
-        entries: list[str] = []
-        ea = self._table_address()
-        if not ea:
-            logger.warning("Vtable has no table address — nothing to import")
+        final_tinfo = self._create_tinfo()
+        if final_tinfo is None:
+            logger.warning("No function pointers found for vtable %s", vtable_name)
             return False
-        ptr_size = 8 if idaapi.inf_is_64bit() else 4
-        # Discover the vtable length — read while ea is a code pointer.
-        current_ea = ea
-        max_entries = 256  # safety bound
-        while len(entries) < max_entries:
-            try:
-                ptr = get_ptr(current_ea)
-            except (RuntimeError, TypeError, ValueError):
-                break
-            if ptr == 0 or not (is_code_ea(ptr) or is_imported_ea(ptr, set())):
-                break
-            # Name the field by its offset (matches the original
-            # VirtualTable.get_udt_member naming convention).
-            offset_hex = current_ea - ea
-            entries.append(f"  void* fn_{offset_hex:X};")
-            current_ea += ptr_size
-
-        if not entries:
-            logger.warning("No function pointers found at 0x%X — nothing to import", ea)
-            return False
-
-        declaration = f"struct {vtable_name} {{\n" + "\n".join(entries) + "\n};"
+        declaration = idaapi.print_tinfo(
+            None,
+            4,
+            5,
+            idaapi.PRTYPE_MULTI | idaapi.PRTYPE_TYPE | idaapi.PRTYPE_SEMI,
+            final_tinfo,
+            vtable_name,
+            None,
+        )
         if ask:
             shown = idaapi.ask_text(
                 0x10000,

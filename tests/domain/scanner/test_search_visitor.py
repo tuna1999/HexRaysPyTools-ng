@@ -196,3 +196,59 @@ def test_search_visitor_init_stores_origin_and_workspace() -> None:
     assert visitor._origin == 0x8
     assert visitor._workspace is workspace
     assert visitor._consts is consts
+
+
+def test_get_member_preserves_scanned_object_for_finalize() -> None:
+    """Candidates keep their ScannedObject so final types can be applied back."""
+    from hexrays_pytools.domain.scanner import member_extractor
+
+    consts = MagicMock()
+    consts.void_tinfo = None
+    consts.const_void_tinfo = None
+    consts.const_pchar_tinfo = None
+    consts.const_pvoid_tinfo = None
+    visitor = _make_visitor(consts=consts)
+    visitor._origin = 0x10
+    visitor.parents = []
+    tinfo = MagicMock()
+    tinfo.dstr.return_value = "int"
+    tinfo.get_size.return_value = 4
+    scan_obj = MagicMock()
+    scan_obj.name = "obj"
+
+    with patch.object(member_extractor, "find_asm_address", return_value=0x401000), patch.object(
+        member_extractor.ScannedObject,
+        "create",
+        return_value=scan_obj,
+    ):
+        member = visitor._get_member(4, MagicMock(), MagicMock(), tinfo=tinfo)
+
+    assert scan_obj in member.scanned_variables
+    assert member.origin == 0x10
+    assert member.offset == 0x14
+
+
+def test_emit_scan_hit_reports_source_and_member_offset(caplog) -> None:
+    """Every scan hit is logged at DEBUG with code location and struct offset."""
+    from hexrays_pytools.domain.scanner import member_extractor
+
+    visitor = _make_visitor()
+    visitor._cfunc.entry_ea = 0x401000
+    visitor.parents = []
+    cexpr = MagicMock()
+    obj = MagicMock()
+    obj.name = "this"
+    member = MagicMock()
+    member.offset = 0x18
+    member.name = "qword_18"
+    member.tinfo = "void *"
+
+    with patch.object(member_extractor, "find_asm_address", return_value=0x401234), patch.object(
+        idaapi, "get_name", return_value="Foo_method"
+    ), caplog.at_level("DEBUG"):
+        visitor._emit_scan_hit(cexpr, obj, member)
+
+    assert (
+        "[HexRaysPyTools][Scan Hit] Foo_method@0x401000 source=0x401234 "
+        "object=this offset=0x18 member=qword_18 type=void *"
+    ) in caplog.text

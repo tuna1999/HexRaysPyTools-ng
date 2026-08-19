@@ -85,6 +85,21 @@ def test_remove_argument_check_requires_arg_lvar() -> None:
     assert RemoveArgument().check(hx) is False
 
 
+def test_remove_argument_check_accepts_ida9_bool_property() -> None:
+    """IDA 9 exposes lvar_t.is_arg_var as a bool property, not a method."""
+    import idaapi
+
+    hx = MagicMock()
+    hx.item.citype = idaapi.VDI_LVAR
+    lvar = MagicMock()
+    lvar.is_arg_var = True
+    hx.item.get_lvar.return_value = lvar
+    assert RemoveArgument().check(hx) is True
+
+    lvar.is_arg_var = False
+    assert RemoveArgument().check(hx) is False
+
+
 def test_activate_with_mock_view_is_noop() -> None:
     """activate() does not raise when the view cannot be resolved / no func type."""
     ctx = MagicMock()

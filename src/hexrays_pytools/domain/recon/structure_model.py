@@ -57,8 +57,9 @@ class StructureModel(QtCore.QAbstractTableModel):
     ) -> None:
         super().__init__()
         self._items: list[AbstractMember] = list(items) if items else []
-        self._items.sort(key=lambda m: m.offset)
+        self._items.sort()
         self.main_offset: int = 0
+        self.default_name: str | None = DEFAULT_STRUCT_NAME
         self.tmpl_types = templated_types
         # collision[i] is True iff items[i] overlaps items[i+1] (offset range)
         self.collisions: list[bool] = [False] * len(self._items)
@@ -194,9 +195,10 @@ class StructureModel(QtCore.QAbstractTableModel):
     # ------------------------------------------------------------------
     def add_row(self, member: AbstractMember) -> None:
         """Insert ``member`` maintaining sorted order by offset; refresh collisions."""
+        if self.have_member(member):
+            return
         self.beginResetModel()  # noqa: N802 - Qt API
-        keys = [m.offset for m in self._items]
-        idx = bisect.bisect_left(keys, int(member.offset))
+        idx = bisect.bisect_left(self._items, member)
         self._items.insert(idx, member)
         self._refresh_collisions()
         self.endResetModel()  # noqa: N802 - Qt API
@@ -206,6 +208,7 @@ class StructureModel(QtCore.QAbstractTableModel):
         self._items = []
         self.collisions = []
         self.main_offset = 0
+        self.default_name = DEFAULT_STRUCT_NAME
         self.endResetModel()  # noqa: N802 - Qt API
 
     @property
@@ -233,18 +236,31 @@ class StructureModel(QtCore.QAbstractTableModel):
         ``items[i]`` overlaps ``items[i+1]``.
         """
         self.collisions = [False] * len(self._items)
-        if len(self._items) <= 1:
+        enabled_rows = [i for i, item in enumerate(self._items) if bool(item.enabled)]
+        if len(enabled_rows) <= 1:
             return
-        i = 0
-        while i < len(self._items) - 1:
-            cur = self._items[i]
-            nxt = self._items[i + 1]
-            if bool(getattr(cur, "enabled", True)) and bool(getattr(nxt, "enabled", True)):
-                cur_end = int(cur.offset) + int(cur.size)
-                if cur_end > int(nxt.offset):
-                    self.collisions[i] = True
-                    self.collisions[i + 1] = True
-            i += 1
+
+        current_pos = 0
+        while current_pos < len(enabled_rows) - 1:
+            current_row = enabled_rows[current_pos]
+            current = self._items[current_row]
+            next_pos = current_pos + 1
+            while next_pos < len(enabled_rows):
+                next_row = enabled_rows[next_pos]
+                nxt = self._items[next_row]
+                current_end = int(current.offset) + int(current.size)
+                if current_end > int(nxt.offset):
+                    self.collisions[current_row] = True
+                    self.collisions[next_row] = True
+                    if current_end < int(nxt.offset) + int(nxt.size):
+                        current_pos = next_pos
+                        break
+                else:
+                    current_pos = next_pos
+                    break
+                next_pos += 1
+            else:
+                break
 
     # ------------------------------------------------------------------
     # Row operations — bound by Structure Builder buttons
@@ -289,16 +305,31 @@ class StructureModel(QtCore.QAbstractTableModel):
         self.layoutChanged.emit()
 
     def activated(self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex) -> None:
-        """Double-click handler: ask user to edit a member's type in-place."""
-        if not index.isValid() or index.column() != 1:
+        """Double-click handler for scan origins (col 0) and member types (col 1)."""
+        if not index.isValid():
             return
         row = index.row()
-        if 0 <= row >= len(self._items):
+        if not (0 <= row < len(self._items)):
             return
         item = self._items[row]
-        activate = getattr(item, "activate", None)
-        if activate is not None:
-            activate(self)
+        if index.column() == 0:
+            scanned_variables = list(getattr(item, "scanned_variables", set()))
+            if not scanned_variables:
+                return
+            from ..chooser import MyChoose
+
+            chooser = MyChoose(
+                [x.to_list() for x in scanned_variables],
+                "Select Variable",
+                [["Origin", 4], ["Function name", 25], ["Variable name", 25], ["Expression address", 10]],
+            )
+            selected = chooser.Show(True)
+            if selected is not None and 0 <= int(selected) < len(scanned_variables):
+                idaapi.open_pseudocode(int(scanned_variables[int(selected)].expression_address), 0)
+        elif index.column() == 1:
+            activate = getattr(item, "activate", None)
+            if activate is not None:
+                activate(self)
 
     # ------------------------------------------------------------------
     # Substructure packing / unpacking — depends on Hex-Rays UDT APIs
@@ -306,12 +337,12 @@ class StructureModel(QtCore.QAbstractTableModel):
     def get_next_enabled(self, row: int) -> int:
         """Return the index of the next enabled item after ``row``.
 
-        Returns ``len(self._items)`` if no more enabled items follow.
+        Returns ``-1`` if no more enabled items follow.
         """
         for i in range(row + 1, len(self._items)):
             if bool(getattr(self._items[i], "enabled", True)):
                 return i
-        return len(self._items)
+        return -1
 
     def have_member_at(self, offset: int) -> bool:
         return any(int(m.offset) == int(offset) for m in self._items)
@@ -320,33 +351,19 @@ class StructureModel(QtCore.QAbstractTableModel):
         return self.have_collision(row)
 
     def calculate_array_size(self, row: int) -> int:
-        """Count enabled same-type members packed contiguously starting at ``row``.
-
-        Mirrors original ``calculate_array_size``: walks forward from ``row``,
-        gathering enabled items with the same ``type_name`` whose offset is
-        exactly ``prev.offset + prev.size`` — returns the count including
-        the starting row.
-        """
+        """Infer array length from the distance to the next enabled member."""
         if row < 0 or row >= len(self._items):
             return 0
         first = self._items[row]
         if not bool(getattr(first, "enabled", True)):
             return 0
-        size = int(first.size) or 1
-        count = 1
-        offset = int(first.offset) + size
-        i = row + 1
-        while i < len(self._items):
-            nxt = self._items[i]
-            if not bool(getattr(nxt, "enabled", True)):
-                i += 1
-                continue
-            if int(nxt.offset) != offset or nxt.type_name != first.type_name:
-                break
-            count += 1
-            offset += int(nxt.size) or 1
-            i += 1
-        return count
+        next_row = self.get_next_enabled(row)
+        if next_row < 0:
+            return 0
+        size = int(first.size)
+        if size <= 0:
+            return 0
+        return (int(self._items[next_row].offset) - int(first.offset)) // size
 
     def get_unique_scanned_variables(self, origin: int = 0) -> list[Any]:
         """Collect unique ``scanned_variables`` from items with matching ``origin``.
@@ -354,13 +371,18 @@ class StructureModel(QtCore.QAbstractTableModel):
         Used by finalize()/set_decl() to find the variables to re-apply
         the newly-constructed type to.
         """
-        seen: set[int] = set()
+        seen: set[Any] = set()
         result: list[Any] = []
         for item in self._items:
             if int(getattr(item, "origin", 0)) != int(origin):
                 continue
             for var in getattr(item, "scanned_variables", set()):
-                key = id(var)
+                key: Any = (
+                    getattr(var, "function_name", None),
+                    getattr(var, "name", None),
+                )
+                if key == (None, None):
+                    key = id(var)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -368,35 +390,61 @@ class StructureModel(QtCore.QAbstractTableModel):
         return result
 
     def get_recognized_shape(self, start: int = 0, stop: int = -1) -> Any:
-        """Build a UDT tinfo from the enabled items in ``items[start:stop]``.
-
-        Returns ``None`` if no enabled items exist. Mirrors the original
-        ``TemporaryStructureModel.get_recognized_shape`` — builds one
-        ``udm_t`` per enabled item, with offset/size taken from the item
-        and type from ``item.tinfo``.
-
-        ``start:stop`` are indices into the sorted items array. Default
-        ``(0, -1)`` means the full range.
-        """
-        end = stop if stop != -1 else len(self._items)
-        enabled = [m for m in self._items[start:end] if bool(getattr(m, "enabled", True))]
+        """Find an existing Local Type whose fields match the selected shape."""
+        if not self._items:
+            return None
+        if stop != -1:
+            base = int(self._items[start].offset)
+            enabled = [x for x in self._items[start:stop] if bool(x.enabled)]
+        else:
+            base = 0
+            enabled = [x for x in self._items if bool(x.enabled)]
         if not enabled:
             return None
-        udt = idaapi.udt_type_data_t()
-        for item in enabled:
-            udm = idaapi.udm_t()
-            udm.offset = int(item.offset) * 8
-            udm.name = str(getattr(item, "name", ""))
-            udm.type = getattr(item, "tinfo", None)
-            udm.size = (
-                int(getattr(item, "size", 0)) * 8
-                if getattr(item, "tinfo", None) is not None
-                else 0
-            )
-            udt.push_back(udm)
-        tinfo = idaapi.tinfo_t()
-        tinfo.create_udt(udt, idaapi.BTF_STRUCT)
-        return tinfo
+
+        min_size = int(enabled[-1].offset) + int(enabled[-1].size) - base
+        offsets = {int(x.offset) for x in enabled}
+        matches: list[tuple[int, Any]] = []
+        for ordinal in range(1, int(idaapi.get_ordinal_count())):
+            tinfo = idaapi.tinfo_t()
+            if not tinfo.get_numbered_type(idaapi.get_idati(), ordinal):
+                continue
+            if not tinfo.is_udt() or int(tinfo.get_size()) < min_size:
+                continue
+            udt = idaapi.udt_type_data_t()
+            if not tinfo.get_udt_details(udt):
+                continue
+            by_offset: dict[int, list[Any]] = {}
+            for field in udt:
+                by_offset.setdefault(int(field.offset) // 8, []).append(field.type)
+
+            found = True
+            for absolute_offset in offsets:
+                candidates = [x for x in enabled if int(x.offset) == absolute_offset]
+                potential = by_offset.get(absolute_offset - base, [])
+                if not any(
+                    item.type_equals_to(field_type)
+                    for item in candidates
+                    for field_type in potential
+                ):
+                    found = False
+                    break
+            if found:
+                matches.append((ordinal, idaapi.tinfo_t(tinfo)))
+
+        if not matches:
+            return None
+        from ..chooser import MyChoose
+
+        chooser = MyChoose(
+            [[str(o), f"0x{int(t.get_size()):08X}", str(t.dstr())] for o, t in matches],
+            "Select Structure",
+            [["Ordinal", 5], ["Size", 10], ["Structure name", 50]],
+        )
+        idx = chooser.Show(True)
+        if idx is not None and 0 <= int(idx) < len(matches):
+            return matches[int(idx)][1]
+        return None
 
     # ------------------------------------------------------------------
     # finalize / pack / resolve_types / load_struct — require IDA UDT APIs
@@ -419,7 +467,7 @@ class StructureModel(QtCore.QAbstractTableModel):
                         )
                         return DEFAULT_STRUCT_NAME
                     candidate = getattr(field, "vtable_name", "").replace("_vtbl", "")
-        return candidate or DEFAULT_STRUCT_NAME
+        return candidate or self.default_name
 
     def finalize(self) -> Any:
         """Build a structure from the current items and create it in Local Types.
@@ -428,7 +476,10 @@ class StructureModel(QtCore.QAbstractTableModel):
         a stub in the original — actual implementation is in ``pack``).
         Calls ``pack`` with the full range and returns the resulting tinfo.
         """
-        return self.pack(0, None)
+        result = self.pack(0, None)
+        if result is not None:
+            self.clear()
+        return result
 
     def pack(self, start: int = 0, stop: int | None = None) -> Any:
         """Build a packed structure from ``items[start:stop]``.
@@ -438,11 +489,10 @@ class StructureModel(QtCore.QAbstractTableModel):
         the UDT; asks the user to confirm the C declaration; and calls
         ``set_decl`` to install it and apply types to scanned variables.
 
-        ``stop=None`` means "until the next disabled member or end".
+        ``stop=None`` means the full remaining range, matching the original.
         """
-        if stop is None:
-            stop = self.get_next_enabled(start)
-        if any(self.collisions[start:stop]):
+        end = len(self._items) if stop is None else stop
+        if any(self.collisions[start:end]):
             logger.warning("Collisions detected")
             return None
         struct_name = self.get_name()
@@ -450,11 +500,11 @@ class StructureModel(QtCore.QAbstractTableModel):
             struct_name = idaapi.ask_str("", idaapi.HIST_TYPE, "Struct name:")
             if not struct_name:
                 return None
-        origin = int(self._items[start].offset) if start < len(self._items) else 0
+        origin = int(self._items[start].offset) if start else 0
         final_tinfo = idaapi.tinfo_t()
         udt_data = idaapi.udt_type_data_t()
         offset = origin
-        for item in [x for x in self._items[start:stop] if bool(getattr(x, "enabled", True))]:
+        for item in [x for x in self._items[start:end] if bool(getattr(x, "enabled", True))]:
             gap = int(item.offset) - offset
             if gap:
                 from ..types.udt_builder import create_padding_udt_member
@@ -623,7 +673,8 @@ class StructureModel(QtCore.QAbstractTableModel):
 
         self.beginResetModel()
         self._items.extend(loaded)
-        self._items.sort(key=lambda m: int(m.offset))
+        self._items.sort()
+        self.default_name = name
         self._refresh_collisions()
         self.endResetModel()
 
@@ -641,6 +692,7 @@ class StructureModel(QtCore.QAbstractTableModel):
             ptr_tinfo.create_ptr(tinfo)
             for scanned_var in self.get_unique_scanned_variables(origin=0):
                 scanned_var.apply_type(ptr_tinfo)
+            self.clear()
             return
 
         start, stop = rows[0], rows[-1] + 1

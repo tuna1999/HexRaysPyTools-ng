@@ -144,24 +144,43 @@ def test_get_recognized_shape_empty_model_returns_none() -> None:
     assert m.get_recognized_shape() is None
 
 
-def test_get_recognized_shape_builds_udt_from_items() -> None:
-    """get_recognized_shape returns a tinfo for a non-empty model."""
-    m = StructureModel()
-    m.add_row(AbstractMember(offset=0, name="a", tinfo=MagicMock(name="int_t")))
-    m.add_row(AbstractMember(offset=4, name="b", tinfo=MagicMock(name="int_t")))
-    tinfo = m.get_recognized_shape()
-    assert tinfo is not None
+def test_get_recognized_shape_selects_matching_local_type(monkeypatch) -> None:
+    """Recognize Shape searches Local Types and returns the selected match."""
+    idaapi = __import__("idaapi")
+    field_type = MagicMock()
+    candidate = MagicMock()
+    candidate.get_numbered_type.return_value = True
+    candidate.is_udt.return_value = True
+    candidate.get_size.return_value = 8
+    candidate.dstr.return_value = "KnownStruct"
 
+    field = MagicMock()
+    field.offset = 0
+    field.type = field_type
 
-def test_get_recognized_shape_ignores_disabled_items() -> None:
-    """Disabled items are not included in the shape."""
-    m = StructureModel()
-    m.add_row(AbstractMember(offset=0, name="a", tinfo=MagicMock(name="int_t")))
-    second = AbstractMember(offset=4, name="b", tinfo=MagicMock(name="int_t"))
-    m.add_row(second)
-    second.enabled = False
-    tinfo = m.get_recognized_shape()
-    assert tinfo is not None
+    class _Udt(list):
+        pass
+
+    udt = _Udt()
+
+    def fill_udt(out) -> bool:
+        out.extend([field])
+        return True
+
+    candidate.get_udt_details.side_effect = fill_udt
+    monkeypatch.setattr(idaapi, "get_ordinal_count", lambda: 2)
+    monkeypatch.setattr(idaapi, "tinfo_t", lambda arg=None: candidate if arg is None else arg)
+    monkeypatch.setattr(idaapi, "udt_type_data_t", lambda: _Udt())
+
+    from hexrays_pytools.domain import chooser as chooser_mod
+
+    monkeypatch.setattr(chooser_mod.MyChoose, "Show", lambda *_a, **_kw: 0)
+    item = AbstractMember(offset=0, name="a", tinfo=MagicMock())
+    item.tinfo.equals_to.return_value = True
+    item.tinfo.get_size.return_value = 4
+    m = StructureModel(items=[item])
+
+    assert m.get_recognized_shape() is candidate
 
 
 # ------------------------------------------------------------------
@@ -230,13 +249,13 @@ def test_remove_items_removes_rows() -> None:
     assert m.items[0].name == "b"
 
 
-def test_calculate_array_size_for_consecutive_same_type() -> None:
-    """Two enabled same-type items at consecutive offsets count as an array."""
+def test_calculate_array_size_uses_distance_to_next_enabled() -> None:
+    """Array length is inferred from next enabled offset, matching v1."""
     a = AbstractMember(offset=0, name="a")
     a.tinfo = MagicMock()
     a.tinfo.get_size.return_value = 4
     a.tinfo.dstr.return_value = "int"
-    b = AbstractMember(offset=4, name="b")
+    b = AbstractMember(offset=8, name="b")
     b.tinfo = MagicMock()
     b.tinfo.get_size.return_value = 4
     b.tinfo.dstr.return_value = "int"
@@ -255,12 +274,31 @@ def test_have_member_returns_true_when_present() -> None:
     a = AbstractMember(offset=0x10, name="a")
     a.tinfo = MagicMock()
     a.tinfo.get_size.return_value = 4
+    a.tinfo.dstr.return_value = "int"
     m = StructureModel(items=[a])
-    # Same offset + same size = match per __eq__
+    # Same offset + same type = match per upstream __eq__
     probe = AbstractMember(offset=0x10, name="b")
     probe.tinfo = MagicMock()
     probe.tinfo.get_size.return_value = 4
+    probe.tinfo.dstr.return_value = "int"
     assert m.have_member(probe) is True
+
+
+def test_add_row_merges_duplicate_scanned_variables() -> None:
+    t1 = MagicMock()
+    t1.dstr.return_value = "int"
+    t1.get_size.return_value = 4
+    t2 = MagicMock()
+    t2.dstr.return_value = "int"
+    t2.get_size.return_value = 4
+    first = AbstractMember(offset=0x10, tinfo=t1, scanned_variables={1})
+    duplicate = AbstractMember(offset=0x10, tinfo=t2, scanned_variables={2})
+    model = StructureModel(items=[first])
+
+    model.add_row(duplicate)
+
+    assert model.rowCount() == 1
+    assert model.items[0].scanned_variables == {1, 2}
 
 
 def test_get_unique_scanned_variables_filters_by_origin() -> None:
@@ -389,6 +427,7 @@ def test_load_struct_uses_named_tinfo_and_skips_padding(monkeypatch) -> None:
     model.load_struct()
 
     assert [(x.offset, x.name, x.cmt) for x in model.items] == [(4, "field_4", "hello")]
+    assert model.default_name == "Loaded"
 
 
 def test_recognize_shape_single_row_applies_pointer_to_origin_zero(monkeypatch) -> None:
@@ -409,6 +448,7 @@ def test_recognize_shape_single_row_applies_pointer_to_origin_zero(monkeypatch) 
 
     ptr.create_ptr.assert_called_once_with(shape)
     scanned.apply_type.assert_called_once_with(ptr)
+    assert model.items == []
 
 
 def test_recognize_shape_range_replaces_covered_members(monkeypatch) -> None:

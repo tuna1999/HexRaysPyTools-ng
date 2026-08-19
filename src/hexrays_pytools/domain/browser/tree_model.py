@@ -50,11 +50,14 @@ class TreeModel(QtCore.QAbstractItemModel):
     """
 
     HEADERS = ["Name", "Declaration", "Address"]
+    refreshed = QtCore.Signal()
 
-    def __init__(self) -> None:
+    def __init__(self, demangled_names: dict[str, set[int]] | None = None) -> None:
         super().__init__()
         self.root_item: TreeItem = TreeItem(item=None)
         self._classes: dict[str, Class] = {}
+        self._demangled_names = demangled_names or {}
+        self.setupModelData()
 
     def rowCount(  # noqa: N802 - Qt API override
         self,
@@ -90,16 +93,53 @@ class TreeModel(QtCore.QAbstractItemModel):
             return None
         tree_item = self._item_from_index(index)
         node = tree_item.item
-        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+        if role in (QtCore.Qt.ItemDataRole.DisplayRole, QtCore.Qt.ItemDataRole.EditRole):
+            getter = getattr(node, "data", None)
+            if getter is not None:
+                return getter(index.column())
             col = index.column()
             if col == 0:
                 return getattr(node, "name", "")
-            if col == 1:
-                return getattr(node, "tooltip", lambda: "")() if hasattr(node, "tooltip") else ""
-            if col == 2:
-                addr = getattr(node, "address", 0) or getattr(node, "ordinal", 0)
-                return hex(int(addr))
+        elif role == QtCore.Qt.ItemDataRole.FontRole:
+            font = getattr(node, "font", None)
+            if font is not None:
+                return font(index.column()) if callable(font) else font
+        elif role == QtCore.Qt.ItemDataRole.ToolTipRole:
+            tooltip = getattr(node, "tooltip", None)
+            if tooltip is not None:
+                return tooltip() if callable(tooltip) else tooltip
+        elif role == QtCore.Qt.ItemDataRole.BackgroundRole:
+            return getattr(node, "color", None)
+        elif role == QtCore.Qt.ItemDataRole.ForegroundRole:
+            from PySide6 import QtGui
+
+            return QtGui.QBrush(QtGui.QColor("#191919"))
         return None
+
+    def flags(self, index: QtCore.QModelIndex | QtCore.QPersistentModelIndex) -> QtCore.Qt.ItemFlag:
+        if not index.isValid():
+            return QtCore.Qt.ItemFlag.NoItemFlags
+        node = self._item_from_index(index).item
+        if hasattr(node, "flags"):
+            return node.flags(index.column())
+        return super().flags(index)
+
+    def setData(  # noqa: N802 - Qt API override
+        self,
+        index: QtCore.QModelIndex | QtCore.QPersistentModelIndex,
+        value: Any,
+        role: int = QtCore.Qt.ItemDataRole.EditRole,
+    ) -> bool:
+        if role != QtCore.Qt.ItemDataRole.EditRole or not index.isValid() or not value:
+            return False
+        node = self._item_from_index(index).item
+        setter = getattr(node, "setData", None)
+        if setter is None:
+            return False
+        changed = bool(setter(index.column(), str(value)))
+        if changed:
+            self.dataChanged.emit(index, index)
+        return changed
 
     def index(  # noqa: N802 - Qt API override
         self,
@@ -145,7 +185,7 @@ class TreeModel(QtCore.QAbstractItemModel):
         self.root_item = TreeItem(item=None)
         self._classes = {}
         for ordinal in range(1, int(idaapi.get_ordinal_count())):
-            cls = Class.create(int(ordinal))
+            cls = Class.create(int(ordinal), self._demangled_names)
             if cls is None:
                 continue
             self._classes[cls.name] = cls
@@ -160,6 +200,52 @@ class TreeModel(QtCore.QAbstractItemModel):
                     vf_item = TreeItem(item=vf)
                     vt_item.append_child(vf_item)
         self.endResetModel()
+
+    def refresh(self) -> None:
+        self.setupModelData()
+        refreshed = getattr(self, "refreshed", None)
+        if refreshed is not None:
+            refreshed.emit()
+
+    def rollback(self) -> None:
+        # Rebuild from Local Types so every TreeItem points at the fresh
+        # Class/VTable/VirtualMethod objects. Updating Class.vtables in place
+        # while keeping the old TreeItems would leave stale child nodes visible.
+        self.setupModelData()
+
+    def commit(self) -> None:
+        for cls in self._classes.values():
+            cls.update_local_type()
+
+    def set_first_argument_type(self, indexes: list[QtCore.QModelIndex]) -> None:
+        indexes = [idx for idx in indexes if idx.isValid() and idx.column() == 0]
+        if not indexes:
+            return
+        nodes = [self._item_from_index(idx).item for idx in indexes]
+        class_name = nodes[0].name if isinstance(nodes[0], Class) else getattr(nodes[0], "class_name", None)
+        if not class_name:
+            parent = self._item_from_index(indexes[0]).parent
+            while parent is not None and parent is not self.root_item:
+                if isinstance(parent.item, Class):
+                    class_name = parent.item.name
+                    break
+                parent = parent.parent
+        if not class_name and self._classes:
+            class_name = next(iter(self._classes))
+        if not class_name:
+            return
+        for node in nodes:
+            setter = getattr(node, "set_first_argument_type", None)
+            if setter is not None:
+                setter(class_name)
+
+    def open_function(self, index: QtCore.QModelIndex) -> None:
+        if not index.isValid():
+            return
+        node = self._item_from_index(index).item
+        opener = getattr(node, "open_function", None)
+        if opener is not None:
+            opener()
 
     def has_function_match(self, class_name: str, name_regex: str) -> bool:
         """Return True if any class has a function matching ``name_regex``.

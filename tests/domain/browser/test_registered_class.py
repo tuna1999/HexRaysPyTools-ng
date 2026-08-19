@@ -57,7 +57,7 @@ def test_create_class_returns_none_for_non_udt() -> None:
 
 
 def test_create_class_returns_none_for_no_vtable() -> None:
-    """Class.create returns None when UDT has no ptr-to-funcptr field."""
+    """Class.create returns None when UDT has no ptr-to-vtable field."""
     idaapi = __import__("idaapi")
     tinfo = MagicMock()
     tinfo.is_udt.return_value = True
@@ -71,27 +71,43 @@ def test_create_class_returns_none_for_no_vtable() -> None:
     assert Class.create(1) is None
 
 
-def test_create_class_returns_class_for_vtable_struct() -> None:
+def test_create_class_returns_class_for_vtable_struct(monkeypatch) -> None:
     """Class.create returns a Class when the type has a vtable field."""
     idaapi = __import__("idaapi")
     tinfo = MagicMock()
     tinfo.is_udt.return_value = True
+    tinfo.dstr.return_value = "Foo"
     member = MagicMock()
     member.type.is_ptr.return_value = True
+    member.offset = 0
     pointed = MagicMock()
-    pointed.is_funcptr.return_value = True
+    pointed.is_udt.return_value = True
+    pointed.get_ordinal.return_value = 7
+    pointed.dstr.return_value = "Foo_vtbl"
     member.type.get_pointed_object.return_value = pointed
-    udt = MagicMock()
-    udt.__iter__.return_value = iter([member])
+
+    vf_member = MagicMock()
+    vf_member.name = "foo"
+    vf_member.offset = 0
+    vf_member.type.is_funcptr.return_value = True
+
+    class _Udt(list):
+        pass
+
+    outer = _Udt([member])
+    nested = _Udt([vf_member])
     idaapi.tinfo_t.return_value = tinfo
-    idaapi.udt_type_data_t.return_value = udt
+    containers = iter([outer, nested, nested])
+    monkeypatch.setattr(idaapi, "udt_type_data_t", lambda: next(containers))
     idaapi.get_idati.return_value = MagicMock()
     tinfo.get_udt_details.return_value = True
-    tinfo.dstr.return_value = "Foo"
+    pointed.get_udt_details.return_value = True
     result = Class.create(42)
     assert result is not None
     assert result.ordinal == 42
     assert result.name == "Foo"
+    assert 0 in result.vtables
+    assert [vf.name for vf in result.vtables[0].virtual_functions] == ["foo"]
 
 
 def test_create_class_returns_none_when_not_udt_after_get() -> None:
@@ -118,14 +134,14 @@ def test_create_class_empty_udt_returns_none() -> None:
 
 
 def test_create_class_ptr_to_non_funcptr_returns_none() -> None:
-    """Class.create returns None when a ptr field points to a non-funcptr."""
+    """Class.create returns None when a ptr field points to a non-vtable UDT."""
     idaapi = __import__("idaapi")
     tinfo = MagicMock()
     tinfo.is_udt.return_value = True
     member = MagicMock()
     member.type.is_ptr.return_value = True
     pointed = MagicMock()
-    pointed.is_funcptr.return_value = False  # ptr but not to funcptr
+    pointed.is_udt.return_value = False
     member.type.get_pointed_object.return_value = pointed
     udt = MagicMock()
     udt.__iter__.return_value = iter([member])
