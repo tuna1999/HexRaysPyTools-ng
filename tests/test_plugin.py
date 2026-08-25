@@ -87,6 +87,22 @@ def test_plugin_init_wires_registry_and_callbacks() -> None:
     assert plugin.hx_callbacks is None
 
 
+def test_plugin_init_skips_when_callback_dispatcher_install_fails(monkeypatch) -> None:
+    from hexrays_pytools.domain.actions.hx_callback import HxCallbackManager
+
+    idaapi.term_hexrays_plugin.reset_mock()
+    monkeypatch.setattr(HxCallbackManager, "install", lambda self: False)
+
+    plugin = HexRaysPyToolsPlugin()
+    result = plugin.init()
+
+    assert result == int(idaapi.PLUGIN_SKIP)
+    assert plugin.session is None
+    assert plugin.actions is None
+    assert plugin.hx_callbacks is None
+    idaapi.term_hexrays_plugin.assert_called_once()
+
+
 def test_plugin_entry_resolves_class_in_synthetic_namespace() -> None:
     """PLUGIN_ENTRY works even when IDA re-binds it into a synthetic namespace.
 
@@ -110,3 +126,14 @@ def test_plugin_entry_resolves_class_in_synthetic_namespace() -> None:
     # Must NOT raise NameError — and must return a real plugin instance.
     instance = synthetic()
     assert isinstance(instance, HexRaysPyToolsPlugin)
+
+
+def test_manifest_defaults_log_level_to_info() -> None:
+    """Fresh HCLI installs should match Session's quiet INFO default."""
+    import json
+    from pathlib import Path
+
+    manifest = json.loads((Path(__file__).parent.parent / "ida-plugin.json").read_text())
+    settings = {item["key"]: item for item in manifest["plugin"]["settings"]}
+
+    assert settings["log_level"]["default"] == "INFO"

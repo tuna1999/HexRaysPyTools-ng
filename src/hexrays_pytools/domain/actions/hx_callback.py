@@ -22,11 +22,14 @@ class HxCallbackManager:
         # to UI / status bar (rendering is follow-up scope).
         self.errors: list[tuple[int, Exception]] = []  # F4: (event_id, exception) pairs
 
-    def install(self) -> None:
+    def install(self) -> bool:
         if self._installed:
-            return
-        idaapi.install_hexrays_callback(self._dispatch)
-        self._installed = True
+            return True
+        if idaapi.install_hexrays_callback(self._dispatch):
+            self._installed = True
+            return True
+        logger.error("Failed to install Hex-Rays callback dispatcher")
+        return False
 
     def register(self, event_id: int, handler: Any) -> None:
         """Register a handler for `event_id`."""

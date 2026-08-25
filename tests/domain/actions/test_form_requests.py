@@ -38,6 +38,7 @@ def test_show_classes_is_action() -> None:
     assert issubclass(ShowClasses, Action)
     assert ShowClasses.description == "Classes"
     assert ShowClasses.hotkey == "Alt+F1"
+    assert ShowClasses.ida_menu_path == "View/Open subviews/Local types"
 
 
 def test_show_classes_instantiable_and_activates() -> None:

@@ -32,7 +32,7 @@
         "key": "log_level",
         "type": "string",
         "required": true,
-        "default": "DEBUG",
+        "default": "INFO",
         "name": "Log Level",
         "choices": ["DEBUG", "INFO", "WARNING", "ERROR"],
         "documentation": "Python logging level.",

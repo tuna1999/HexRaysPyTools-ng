@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_MAX_RENAME_ATTEMPTS = 64
+
 
 _RENAME_MENU_PATH = "HexRaysPyTools/Rename/"
 
@@ -50,11 +52,14 @@ def _is_default_name(name: str | None) -> bool:
     return _DEFAULT_NAME_PATTERN.match(name) is not None
 
 
-def _rename_with_prefix(rename_func: Any, name: str) -> str:
+def _rename_with_prefix(rename_func: Any, name: str) -> str | None:
     """Call ``rename_func(name)``; on collision, prefix with ``_`` until it sticks."""
-    while not rename_func(name):
+    for _ in range(_MAX_RENAME_ATTEMPTS):
+        if rename_func(name):
+            return name
         name = "_" + name
-    return name
+    logger.warning("Rename failed after %d attempts", _MAX_RENAME_ATTEMPTS)
+    return None
 
 
 def _get_hx_view(ctx: Any) -> Any:
@@ -86,7 +91,7 @@ class RenameInside(HexRaysPopupAction):
     """Push the variable's name into the called function's parameter."""
 
     description = "Rename inside argument"
-    hotkey = "Shift+Alt+N"
+    hotkey = "Shift+N"
     menu_path = _RENAME_MENU_PATH
 
     def check(self, hx_view: Any) -> bool:
@@ -211,7 +216,8 @@ class _NamePropagator(RecursiveObjectDownwardsVisitor):
                     lambda x: idaapi.set_name(int(cexpr.obj_ea), x),
                     self._propagated_name,
                 )
-                logger.debug("Renamed global variable from %s to %s", old_name, new_name)
+                if new_name is not None:
+                    logger.debug("Renamed global variable from %s to %s", old_name, new_name)
         elif int(obj.id) == int(SO_LOCAL_VARIABLE):
             lvar = self._cfunc.get_lvars()[int(cexpr.v.idx)]
             old_name = str(lvar.name)
@@ -220,7 +226,8 @@ class _NamePropagator(RecursiveObjectDownwardsVisitor):
                     lambda x: self._hx_view.rename_lvar(lvar, x, True),
                     self._propagated_name,
                 )
-                logger.debug("Renamed local variable from %s to %s", old_name, new_name)
+                if new_name is not None:
+                    logger.debug("Renamed local variable from %s to %s", old_name, new_name)
         elif int(obj.id) in (int(SO_STRUCT_POINTER), int(SO_STRUCT_REFERENCE)):
             struct_tinfo = cexpr.x.type
             offset = int(cexpr.m)
@@ -233,6 +240,8 @@ class _NamePropagator(RecursiveObjectDownwardsVisitor):
                     lambda x: change_member_name(struct_name, offset, x),
                     self._propagated_name,
                 )
+                if new_name is None:
+                    return
                 logger.debug("Renamed struct member from %s to %s", old_name, new_name)
 
     def _session_override_get(self, key: str) -> bool:

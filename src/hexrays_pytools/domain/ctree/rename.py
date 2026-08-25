@@ -25,6 +25,8 @@ from ..types.tinfo_utils import change_member_name
 
 logger = logging.getLogger(__name__)
 
+_MAX_RENAME_ATTEMPTS = 64
+
 
 # --- Pure helpers (testable) --------------------------------------------------
 
@@ -91,8 +93,11 @@ def extract_rename_other_info(cfunc: Any, ctree_item: Any) -> RenameOtherInfo | 
 def rename_other(hx_view: Any, info: RenameOtherInfo) -> None:
     """Rename the lvar, prefixing with `_` until the rename succeeds."""
     name = info.name
-    while not hx_view.rename_lvar(info.lvar, name, True):
+    for _ in range(_MAX_RENAME_ATTEMPTS):
+        if hx_view.rename_lvar(info.lvar, name, True):
+            return
         name = "_" + name
+    logger.warning("Failed to rename local variable after %d attempts", _MAX_RENAME_ATTEMPTS)
 
 
 # --- RenameInside: push var name into the called function's parameter --------
@@ -241,7 +246,7 @@ class _RenameUsingAssertVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
     def _add_func_name(self, arg_expr: Any) -> None:
         new_name = idc.get_strlit_contents(arg_expr.obj_ea)
         if isinstance(new_name, bytes):
-            new_name = new_name.decode("ascii")
+            new_name = new_name.decode("utf-8", errors="replace")
         if not idaapi.is_valid_typename(new_name):
             logger.warning(
                 "Argument has a weird name `%s`",
@@ -267,7 +272,7 @@ def _can_be_part_of_assert(cfunc: Any, ctree_item: Any) -> bool:
     if not is_code_ea(obj_ea) and idc.get_str_type(obj_ea) == idc.STRTYPE_C:
         str_potential_name = idc.get_strlit_contents(obj_ea)
         if isinstance(str_potential_name, bytes):
-            str_potential_name = str_potential_name.decode("ascii")
+            str_potential_name = str_potential_name.decode("utf-8", errors="replace")
         return bool(idaapi.is_valid_typename(str_potential_name))
     return False
 

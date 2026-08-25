@@ -38,6 +38,7 @@ def _make_visitor(consts: Any | None = None) -> SearchVisitor:
     v._cfunc = cfunc
     v._init_obj = obj
     v._consts = consts
+    v.crippled = False
     return v
 
 

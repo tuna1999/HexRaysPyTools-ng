@@ -60,11 +60,66 @@ def test_registry_build_actions_b10_fix_hotkey() -> None:
 
 def test_registry_register_one_appends() -> None:
     """_register_one adds to actions and calls idaapi.register_action."""
+    import idaapi
+
+    idaapi.register_action.return_value = True
     r = ActionRegistry()
     action = MagicMock()
     action.name = "test_action"
     r._register_one(action)
     assert action in r.actions
+
+
+def test_registry_register_failure_is_not_owned_or_unregistered() -> None:
+    import idaapi
+
+    idaapi.register_action.return_value = False
+    idaapi.unregister_action.reset_mock()
+    r = ActionRegistry()
+    action = MagicMock()
+    action.name = "test_action"
+
+    r._register_one(action)
+    r.unregister_all()
+
+    assert action not in r.actions
+    idaapi.unregister_action.assert_not_called()
+
+
+def test_show_classes_attaches_to_local_types_menu() -> None:
+    import idaapi
+
+    from hexrays_pytools.domain.actions.form_requests import ShowClasses
+
+    idaapi.register_action.return_value = True
+    idaapi.attach_action_to_menu.return_value = True
+    idaapi.attach_action_to_menu.reset_mock()
+    r = ActionRegistry()
+
+    r._register_one(ShowClasses())
+
+    idaapi.attach_action_to_menu.assert_called_once_with(
+        "View/Open subviews/Local types",
+        "HexRaysPyTools:ShowClasses",
+        idaapi.SETMENU_APP,
+    )
+
+
+def test_unregister_detaches_show_classes_from_local_types_menu() -> None:
+    import idaapi
+
+    from hexrays_pytools.domain.actions.form_requests import ShowClasses
+
+    idaapi.detach_action_from_menu.reset_mock()
+    r = ActionRegistry()
+    r._actions = [ShowClasses()]
+
+    r.unregister_all()
+
+    idaapi.detach_action_from_menu.assert_called_once_with(
+        "View/Open subviews/Local types",
+        "HexRaysPyTools:ShowClasses",
+    )
 
 
 def test_registry_unregister_all_clears() -> None:

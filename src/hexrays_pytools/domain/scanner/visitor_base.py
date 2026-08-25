@@ -577,7 +577,14 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
             cfunc = decompile_function(func_ea)
             if cfunc is not None:
                 lvars = list(cfunc.get_lvars())
-                assert arg_idx < len(lvars), f"Wrong argument at func {to_hex(func_ea)}"
+                if arg_idx < 0 or arg_idx >= len(lvars):
+                    logger.warning(
+                        "Skipping recursive scan at %s: argument %d is outside %d lvars",
+                        to_hex(func_ea),
+                        arg_idx,
+                        len(lvars),
+                    )
+                    continue
                 obj = VariableObject(lvars[arg_idx], arg_idx)
                 self.prepare_new_scan(cfunc, arg_idx, obj)
                 self._recursive_process()

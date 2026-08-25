@@ -90,7 +90,14 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
         # Install the hx event dispatcher first — ActionRegistry needs it to
         # attach popup actions to hxe_populating_popup.
         self.hx_callbacks = HxCallbackManager()
-        self.hx_callbacks.install()
+        if not self.hx_callbacks.install():
+            logger.error("Hex-Rays callback dispatcher unavailable; skipping plugin initialization")
+            self.hx_callbacks = None
+            if self.session is not None:
+                self.session.close()
+                self.session = None
+            idaapi.term_hexrays_plugin()
+            return int(idaapi.PLUGIN_SKIP)
         # F4: share hx_callbacks reference with Session for error visibility.
         if self.session is not None:
             self.session.hx_callbacks = self.hx_callbacks

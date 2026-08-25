@@ -121,7 +121,7 @@ class TreeModel(QtCore.QAbstractItemModel):
             return QtCore.Qt.ItemFlag.NoItemFlags
         node = self._item_from_index(index).item
         if hasattr(node, "flags"):
-            return node.flags(index.column())
+            return QtCore.Qt.ItemFlag(node.flags(index.column()))
         return super().flags(index)
 
     def setData(  # noqa: N802 - Qt API override

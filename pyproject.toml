@@ -29,6 +29,7 @@ dev = [
     "pytest-mock>=3.12",
     "ruff>=0.1.0",
     "mypy>=1.7",
+    "pyside6>=6.5",
 ]
 
 [tool.hatch.build.targets.wheel]

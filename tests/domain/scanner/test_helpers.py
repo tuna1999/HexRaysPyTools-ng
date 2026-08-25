@@ -115,3 +115,15 @@ def test_function_touch_visitor_process_skips_already_touched() -> None:
     result = v.process()
     assert result is False
     v.apply_to.assert_not_called()
+
+
+def test_function_touch_visitor_refresh_failure_does_not_poison_touched_cache() -> None:
+    cfunc = MagicMock()
+    cfunc.entry_ea = 0x401000
+    touched: set[int] = set()
+    v = FunctionTouchVisitor(cfunc, touched, imported_ea=set())
+    v.apply_to = MagicMock()
+    idaapi.decompile = MagicMock(side_effect=idaapi.DecompilationFailure)
+
+    assert v.process() is False
+    assert 0x401000 not in touched

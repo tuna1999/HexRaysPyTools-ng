@@ -160,8 +160,7 @@ class ActionRegistry:
         return [cls(self._session) for cls in all_classes]
 
     def _register_one(self, action: Action) -> None:
-        self._actions.append(action)
-        idaapi.register_action(
+        registered = idaapi.register_action(
             idaapi.action_desc_t(
                 action.name,
                 action.description,
@@ -169,6 +168,17 @@ class ActionRegistry:
                 action.hotkey,
             )
         )
+        if not registered:
+            logger.warning("Failed to register action: %s", action.name)
+            return
+        self._actions.append(action)
+        ida_menu_path = getattr(type(action), "ida_menu_path", None)
+        if ida_menu_path is not None and not idaapi.attach_action_to_menu(
+            ida_menu_path,
+            action.name,
+            idaapi.SETMENU_APP,
+        ):
+            logger.warning("Failed to attach action %s to menu %s", action.name, ida_menu_path)
         # Attach popup actions to the Hex-Rays right-click menu. Each
         # HexRaysPopupAction gets wrapped in a HexRaysPopupRequestHandler
         # registered for hxe_populating_popup; when the user right-clicks in
@@ -187,6 +197,9 @@ class ActionRegistry:
 
     def unregister_all(self) -> None:
         for action in self._actions:
+            ida_menu_path = getattr(type(action), "ida_menu_path", None)
+            if ida_menu_path is not None:
+                idaapi.detach_action_from_menu(ida_menu_path, action.name)
             idaapi.unregister_action(action.name)
         self._actions = []
 

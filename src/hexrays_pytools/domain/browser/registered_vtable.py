@@ -320,7 +320,7 @@ class RegisteredVTable:
         except (AttributeError, RuntimeError):
             return
         self.virtual_functions = []
-        for index, member in enumerate(udt_data):
+        for member in udt_data:
             vf = VirtualMethod(
                 name=str(member.name),
                 tinfo=member.type,

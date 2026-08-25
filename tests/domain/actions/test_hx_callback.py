@@ -22,14 +22,28 @@ def test_register_adds_handler() -> None:
 def test_install_calls_idaapi() -> None:
     """install() calls install_hexrays_callback once."""
     idaapi.install_hexrays_callback.reset_mock()
+    idaapi.install_hexrays_callback.return_value = True
     m = HxCallbackManager()
-    m.install()
+    assert m.install() is True
     idaapi.install_hexrays_callback.assert_called_once()
     assert m._installed is True
 
 
+def test_install_failure_does_not_mark_installed() -> None:
+    idaapi.install_hexrays_callback.reset_mock()
+    idaapi.install_hexrays_callback.return_value = False
+    m = HxCallbackManager()
+
+    assert m.install() is False
+
+    assert m._installed is False
+    assert m.install() is False
+    assert idaapi.install_hexrays_callback.call_count == 2
+
+
 def test_install_idempotent() -> None:
     """install() called twice doesn't re-install."""
+    idaapi.install_hexrays_callback.return_value = True
     m = HxCallbackManager()
     m.install()
     m.install()  # second call no-op

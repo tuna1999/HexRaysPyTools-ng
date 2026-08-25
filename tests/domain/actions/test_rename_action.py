@@ -15,6 +15,7 @@ from hexrays_pytools.domain.actions.rename_action import (
     RenameOutside,
     RenameUsingAssert,
     _is_default_name,
+    _rename_with_prefix,
 )
 
 
@@ -35,7 +36,7 @@ def test_rename_inside_metadata() -> None:
     a = RenameInside()
     assert a.name == "HexRaysPyTools:RenameInside"
     assert a.description == "Rename inside argument"
-    assert a.hotkey == "Shift+Alt+N"
+    assert a.hotkey == "Shift+N"
 
 
 def test_rename_outside_metadata() -> None:
@@ -99,6 +100,13 @@ def test_is_default_name_rejects_real_names() -> None:
     assert _is_default_name("my_var") is False
     assert _is_default_name("count") is False
     assert _is_default_name("n_elements") is False
+
+
+def test_rename_with_prefix_stops_after_bounded_failures() -> None:
+    rename = MagicMock(return_value=False)
+
+    assert _rename_with_prefix(rename, "count") is None
+    assert rename.call_count == 64
 
 
 def test_propagate_name_check_rejects_non_vdi_expr() -> None:

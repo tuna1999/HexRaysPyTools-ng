@@ -58,6 +58,18 @@ def test_model_clear() -> None:
     assert m.rowCount() == 0
 
 
+def test_finalize_empty_model_returns_none() -> None:
+    m = StructureModel()
+
+    assert m.finalize() is None
+
+
+def test_pack_empty_model_returns_none() -> None:
+    m = StructureModel()
+
+    assert m.pack() is None
+
+
 def test_model_data_display_role() -> None:
     """data() returns correct values for each column under DisplayRole.
 
@@ -160,8 +172,6 @@ def test_get_recognized_shape_selects_matching_local_type(monkeypatch) -> None:
 
     class _Udt(list):
         pass
-
-    udt = _Udt()
 
     def fill_udt(out) -> bool:
         out.extend([field])

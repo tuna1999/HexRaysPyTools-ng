@@ -17,7 +17,7 @@ def get_arg_name_and_type(func_tinfo: idaapi.tinfo_t, arg_index: int) -> tuple[s
     func_data = idaapi.func_type_data_t()
     if not func_tinfo.get_func_details(func_data):
         return "", idaapi.tinfo_t()
-    if arg_index >= len(func_data):
+    if arg_index < 0 or arg_index >= len(func_data):
         return "", idaapi.tinfo_t()
     arg = func_data[arg_index]
     return arg.name, arg.type
@@ -28,7 +28,7 @@ def set_func_argument(func_tinfo: idaapi.tinfo_t, arg_index: int, new_type: idaa
     func_data = idaapi.func_type_data_t()
     if not func_tinfo.get_func_details(func_data):
         return False
-    if arg_index >= len(func_data):
+    if arg_index < 0 or arg_index >= len(func_data):
         return False
     func_data[arg_index].type = new_type
     return bool(func_tinfo.create_func(func_data, idaapi.BT_FUNC))
@@ -91,7 +91,8 @@ def get_func_arg_name(func_tinfo: idaapi.tinfo_t, arg_idx: int) -> str | None:
     Mirrors the original `helper.get_func_arg_name`.
     """
     func_data = idaapi.func_type_data_t()
-    func_tinfo.get_func_details(func_data)
+    if arg_idx < 0 or not func_tinfo.get_func_details(func_data):
+        return None
     if arg_idx < int(func_tinfo.get_nargs()):
         return str(func_data[arg_idx].name)
     return None
@@ -103,6 +104,7 @@ def set_func_arg_name(func_tinfo: idaapi.tinfo_t, arg_idx: int, name: str) -> No
     Mirrors the original `helper.set_func_arg_name`.
     """
     func_data = idaapi.func_type_data_t()
-    func_tinfo.get_func_details(func_data)
+    if arg_idx < 0 or not func_tinfo.get_func_details(func_data) or arg_idx >= len(func_data):
+        return
     func_data[arg_idx].name = name
     func_tinfo.create_func(func_data)

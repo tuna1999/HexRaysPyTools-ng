@@ -104,6 +104,9 @@ class ShallowScanVariable(Scanner):
     def activate(self, ctx: Any) -> None:
         self._output("[HexRaysPyTools][Scan] action invoked")
         hx_view = idaapi.get_widget_vdui(ctx.widget)
+        if hx_view is None:
+            self._output("[HexRaysPyTools][Scan] skipped: pseudocode view is unavailable")
+            return
         cfunc = hx_view.cfunc
         workspace = self._workspace()
         if workspace is None:
@@ -132,6 +135,9 @@ class DeepScanVariable(Scanner):
     def activate(self, ctx: Any) -> None:
         self._output("[HexRaysPyTools][Deep Scan] action invoked")
         hx_view = idaapi.get_widget_vdui(ctx.widget)
+        if hx_view is None:
+            self._output("[HexRaysPyTools][Deep Scan] skipped: pseudocode view is unavailable")
+            return
         cfunc = hx_view.cfunc
         workspace = self._workspace()
         if workspace is None:
@@ -177,6 +183,8 @@ class RecognizeShape(Scanner):
 
     def activate(self, ctx: Any) -> None:
         hx_view = idaapi.get_widget_vdui(ctx.widget)
+        if hx_view is None:
+            return
         cfunc = hx_view.cfunc
         if not self._can_be_scanned(cfunc, hx_view.item):
             return
@@ -229,6 +237,8 @@ class DeepScanReturn(Scanner):
 
     def activate(self, ctx: Any) -> None:
         hx_view = idaapi.get_widget_vdui(ctx.widget)
+        if hx_view is None:
+            return
         cfunc = hx_view.cfunc
         workspace = self._workspace()
         if workspace is None:

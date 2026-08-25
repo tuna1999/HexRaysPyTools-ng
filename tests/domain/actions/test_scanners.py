@@ -56,6 +56,7 @@ def test_deep_scan_variable_instantiable() -> None:
 def test_deep_scan_captures_object_before_touching_ctree() -> None:
     """Deep scan must not recreate its ScanObject after FunctionTouchVisitor refreshes ctree."""
     import idaapi  # type: ignore[import-not-found]
+
     from hexrays_pytools.domain.actions import scanners
 
     session = MagicMock()

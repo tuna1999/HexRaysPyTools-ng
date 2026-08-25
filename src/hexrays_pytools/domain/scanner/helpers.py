@@ -86,14 +86,19 @@ class FunctionTouchVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
                     FunctionTouchVisitor(cfunc, self._touched, self._imported_ea).process()
             except idaapi.DecompilationFailure:
                 logger.warning("IDA failed to decompile function at 0x%08X", address)
-                self._touched.add(address)
         idaapi.decompile(int(self.cfunc.entry_ea))
 
     def process(self) -> bool:
         """Process this function: mark touched, walk, touch_all. Returns True if new."""
         if int(self.cfunc.entry_ea) not in self._touched:
-            self._touched.add(int(self.cfunc.entry_ea))
+            entry_ea = int(self.cfunc.entry_ea)
+            self._touched.add(entry_ea)
             self.apply_to(self.cfunc.body, None)
-            self.touch_all()
+            try:
+                self.touch_all()
+            except idaapi.DecompilationFailure:
+                self._touched.discard(entry_ea)
+                logger.warning("IDA failed to refresh function at 0x%08X", entry_ea)
+                return False
             return True
         return False

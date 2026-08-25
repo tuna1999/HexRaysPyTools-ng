@@ -65,6 +65,7 @@ class ShowClasses(Action):
 
     description = "Classes"
     hotkey = "Alt+F1"
+    ida_menu_path = "View/Open subviews/Local types"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

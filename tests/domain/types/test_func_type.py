@@ -51,6 +51,20 @@ def test_get_arg_name_and_type_empty_when_index_out_of_range() -> None:
     assert name == ""
 
 
+def test_get_arg_name_and_type_empty_when_index_is_negative() -> None:
+    idaapi = __import__("idaapi")
+    func_tinfo = MagicMock()
+    func_data = MagicMock()
+    func_data.__len__.return_value = 1
+    func_tinfo.get_func_details.return_value = True
+    idaapi.func_type_data_t.return_value = func_data
+
+    name, _arg_type = get_arg_name_and_type(func_tinfo, -1)
+
+    assert name == ""
+    func_data.__getitem__.assert_not_called()
+
+
 def test_set_func_argument_fails_when_get_func_details_fails() -> None:
     """set_func_argument returns False when get_func_details fails."""
     idaapi = __import__("idaapi")
@@ -69,6 +83,18 @@ def test_set_func_argument_fails_when_index_out_of_range() -> None:
     func_tinfo.get_func_details.return_value = True
     idaapi.func_type_data_t.return_value = func_data
     assert set_func_argument(func_tinfo, 5, MagicMock()) is False
+
+
+def test_set_func_argument_fails_when_index_is_negative() -> None:
+    idaapi = __import__("idaapi")
+    func_tinfo = MagicMock()
+    func_data = MagicMock()
+    func_data.__len__.return_value = 1
+    func_tinfo.get_func_details.return_value = True
+    idaapi.func_type_data_t.return_value = func_data
+
+    assert set_func_argument(func_tinfo, -1, MagicMock()) is False
+    func_data.__getitem__.assert_not_called()
 
 
 def test_set_func_return_fails_when_get_func_details_fails() -> None:
@@ -204,15 +230,43 @@ def test_get_func_arg_name_none_when_out_of_range() -> None:
     assert get_func_arg_name(func_tinfo, 5) is None
 
 
+def test_get_func_arg_name_none_when_index_is_negative() -> None:
+    idaapi = __import__("idaapi")
+    func_tinfo = MagicMock()
+    func_data = MagicMock()
+    func_tinfo.get_func_details.return_value = True
+    func_tinfo.get_nargs.return_value = 2
+    idaapi.func_type_data_t.return_value = func_data
+
+    assert get_func_arg_name(func_tinfo, -1) is None
+    func_data.__getitem__.assert_not_called()
+
+
 def test_set_func_arg_name_sets_and_rebuilds() -> None:
     """set_func_arg_name sets the arg name and rebuilds the func type."""
     idaapi = __import__("idaapi")
     func_tinfo = MagicMock()
     arg = MagicMock()
     func_data = MagicMock()
+    func_data.__len__.return_value = 2
     func_data.__getitem__.return_value = arg
+    func_tinfo.get_func_details.return_value = True
     idaapi.func_type_data_t.return_value = func_data
     set_func_arg_name(func_tinfo, 1, "count")
     assert arg.name == "count"
     func_tinfo.create_func.assert_called_once_with(func_data)
+
+
+def test_set_func_arg_name_ignores_negative_index() -> None:
+    idaapi = __import__("idaapi")
+    func_tinfo = MagicMock()
+    func_data = MagicMock()
+    func_data.__len__.return_value = 2
+    func_tinfo.get_func_details.return_value = True
+    idaapi.func_type_data_t.return_value = func_data
+
+    set_func_arg_name(func_tinfo, -1, "count")
+
+    func_data.__getitem__.assert_not_called()
+    func_tinfo.create_func.assert_not_called()
 

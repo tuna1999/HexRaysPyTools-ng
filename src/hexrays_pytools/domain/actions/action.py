@@ -21,11 +21,14 @@ class Action(idaapi.action_handler_t):  # type: ignore[misc]
             The trailing ``/`` makes IDA create a submenu. ``None`` means the
             action is not attached to the popup (only triggered by hotkey or
             the Edit > Plugins menu).
+        ida_menu_path: optional permanent IDA menu path used for non-popup
+            actions such as the Classes entry under Local Types.
     """
 
     description: str = ""
     hotkey: str | None = None
     menu_path: str | None = None
+    ida_menu_path: str | None = None
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__()

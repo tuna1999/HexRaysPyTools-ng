@@ -6,9 +6,11 @@ These tests cover the pure helpers: default-name detection and the
 rename-worthiness check.
 """
 from hexrays_pytools.domain.ctree.rename import (
+    _can_be_part_of_assert,
     _is_default_name,
     _should_be_renamed,
     extract_rename_other_info,
+    rename_other,
 )
 
 
@@ -63,3 +65,44 @@ def test_extract_rename_other_returns_none_for_non_expr_item() -> None:
     item = MagicMock()
     item.citype = idaapi.VDI_LVAR  # not VDI_EXPR
     assert extract_rename_other_info(cfunc, item) is None
+
+
+def test_rename_other_stops_after_bounded_failures() -> None:
+    from unittest.mock import MagicMock
+
+    hx_view = MagicMock()
+    hx_view.rename_lvar.return_value = False
+    info = MagicMock()
+    info.name = "count"
+
+    rename_other(hx_view, info)
+
+    assert hx_view.rename_lvar.call_count == 64
+
+
+def test_assert_name_check_handles_utf8_string_literal(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    import idaapi
+    import idc
+
+    from hexrays_pytools.infra.arch import arch as arch_module
+
+    expr = MagicMock()
+    expr.op = idaapi.cot_obj
+    expr.obj_ea = 0x500000
+    item = MagicMock()
+    item.citype = idaapi.VDI_EXPR
+    item.it.to_specific_type = expr
+    parent = MagicMock()
+    parent.op = idaapi.cot_call
+    parent.x.op = idaapi.cot_obj
+    cfunc = MagicMock()
+    cfunc.body.find_parent_of.return_value.to_specific_type = parent
+
+    monkeypatch.setattr(arch_module, "is_code_ea", lambda _ea: False)
+    monkeypatch.setattr(idc, "get_str_type", lambda _ea: idc.STRTYPE_C)
+    monkeypatch.setattr(idc, "get_strlit_contents", lambda _ea: b"t\xc3\xaan_hop_le")
+    monkeypatch.setattr(idaapi, "is_valid_typename", lambda value: isinstance(value, str))
+
+    assert _can_be_part_of_assert(cfunc, item) is True

@@ -269,6 +269,9 @@ class _MockIdaModule:
             self._title = title
             self._cols = cols or []
 
+        def Show(self, modal: bool = False) -> int:  # noqa: N802, ARG002 - IDA API
+            return 0
+
     def __getattr__(self, name: str) -> Any:
         # Names starting with "_" are real attributes (Python internals, the
         # constants above). Anything else is a mock. Cache in __dict__ so

@@ -115,6 +115,8 @@ class GuessAllocation(HexRaysPopupAction):
 
     def activate(self, ctx: Any) -> None:
         hx_view = idaapi.get_widget_vdui(ctx.widget)
+        if hx_view is None:
+            return
         obj = ScanObject.create(hx_view.cfunc, hx_view.item)
         if obj is None:
             return

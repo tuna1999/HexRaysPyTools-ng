@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import suppress
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -91,10 +92,8 @@ class DiscoveredVTable(AbstractMember):
             offset = current - ea
             if is_imported_ea(ptr, set()):
                 tinfo = idaapi.tinfo_t()
-                try:
+                with suppress(AttributeError, RuntimeError):
                     idaapi.guess_tinfo(tinfo, int(ptr))
-                except (AttributeError, RuntimeError):
-                    pass
                 raw_name = idaapi.get_name(int(ptr))
                 func_name = raw_name if isinstance(raw_name, str) and raw_name else f"sub_{int(ptr):X}"
                 self.virtual_functions.append(
@@ -242,8 +241,8 @@ class DiscoveredVTable(AbstractMember):
                 demangled = idc.demangle_name(raw_name, idc.INF_SHORT_DN)
             except (AttributeError, RuntimeError):
                 demangled = None
-            if demangled:
-                cleaned = str(demangled).replace("const ", "").replace("::_vftable", "_vtbl")
+            if isinstance(demangled, str) and demangled:
+                cleaned = demangled.replace("const ", "").replace("::_vftable", "_vtbl")
                 cleaned = re.sub(r"[^0-9A-Za-z_:]", "_", cleaned).strip("_")
                 if cleaned:
                     return cleaned.replace("::", "_")

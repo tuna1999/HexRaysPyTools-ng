@@ -62,5 +62,9 @@ class ProxyModel(QtCore.QSortFilterProxyModel):
         if self.filter_by_function and node is not None and hasattr(node, "has_function"):
             return bool(node.has_function(regex.pattern()))
         # Default: match name (use stdlib re for portability)
-        node_name = getattr(node, "class_name", None) or getattr(node, "name", "") or ""
+        class_name = getattr(node, "class_name", None)
+        plain_name = getattr(node, "name", "")
+        node_name = class_name if isinstance(class_name, str) and class_name else plain_name
+        if not isinstance(node_name, str):
+            node_name = ""
         return bool(re.search(regex.pattern(), node_name))

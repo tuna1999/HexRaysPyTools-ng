@@ -155,6 +155,26 @@ def test_recursive_downwards_check_call_is_overridden() -> None:
     v._check_call(MagicMock())  # should not raise NotImplementedError
 
 
+def test_recursive_downwards_skips_argument_outside_callee_lvars(monkeypatch) -> None:
+    from hexrays_pytools.domain.scanner import visitor_base as visitor_module
+
+    v = _make_recursive(RecursiveObjectDownwardsVisitor)
+    v._new_for_visit.add((0x402000, 3))
+    callee = MagicMock()
+    callee.get_lvars.return_value = [MagicMock()]
+    monkeypatch.setattr(visitor_module, "decompile_function", lambda _ea: callee)
+    monkeypatch.setattr(
+        visitor_module.RecursiveObjectVisitor,
+        "_recursive_process",
+        lambda self: None,
+    )
+    v.prepare_new_scan = MagicMock()
+
+    v._recursive_process()
+
+    v.prepare_new_scan.assert_not_called()
+
+
 # --- RecursiveObjectUpwardsVisitor -------------------------------------------
 
 

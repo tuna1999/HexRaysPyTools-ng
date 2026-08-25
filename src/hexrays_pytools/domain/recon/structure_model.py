@@ -492,6 +492,8 @@ class StructureModel(QtCore.QAbstractTableModel):
         ``stop=None`` means the full remaining range, matching the original.
         """
         end = len(self._items) if stop is None else stop
+        if not self._items or start < 0 or start >= end or start >= len(self._items):
+            return None
         if any(self.collisions[start:end]):
             logger.warning("Collisions detected")
             return None
