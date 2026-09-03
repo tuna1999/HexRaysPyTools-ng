@@ -2,6 +2,8 @@
 
 Comprehensive toolkit for IDA Pro's Hex-Rays decompiler: structure reconstruction, class/vtable management, code manipulation, and field cross-reference tracking.
 
+This is a fork of [HexRaysPyTools](https://github.com/igogo-x86/hexrayspytools) (originally by igogo-x86) and [oopsmishap/HexRaysPyTools](https://github.com/oopsmishap/HexRaysPyTools), rewritten to focus on **IDA 9.x** and **Qt6 (PySide6)** support.
+
 ## Installation
 
 The plugin is distributed as an HCLI archive.
@@ -35,4 +37,3 @@ mypy --strict src/hexrays_pytools/
 ruff check src/hexrays_pytools/ tests/ tools/
 ```
 
-See [docs/superpowers/specs/2026-06-18-hexrays-pytools-rewrite-design.md](docs/superpowers/specs/2026-06-18-hexrays-pytools-rewrite-design.md) for the rewrite design rationale.
