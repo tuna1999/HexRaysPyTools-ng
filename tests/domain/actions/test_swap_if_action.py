@@ -12,7 +12,7 @@ from hexrays_pytools.domain.actions.swap_if_action import SwapThenElse
 def test_swap_then_else_init() -> None:
     a = SwapThenElse()
     assert a.hotkey == "Shift+Alt+S"
-    assert a.menu_path == "HexRaysPyTools/"
+    assert a.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_swap_then_else_check_none_returns_false() -> None:

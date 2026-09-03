@@ -29,7 +29,7 @@ class ConvertToUsercall(HexRaysPopupAction):
     """Convert the current function signature to __usercall."""
 
     description = "Convert to __usercall"
-    menu_path = "HexRaysPyTools/Function/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def check(self, hx_view: Any) -> bool:
         return hx_view is not None and hx_view.item.citype == idaapi.VDI_FUNC
@@ -66,7 +66,7 @@ class AddRemoveReturn(HexRaysPopupAction):
     """Toggle a return value on the current function (void ↔ void *)."""
 
     description = "Add/Remove Return"
-    menu_path = "HexRaysPyTools/Function/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def check(self, hx_view: Any) -> bool:
         return hx_view is not None and hx_view.item.citype == idaapi.VDI_FUNC
@@ -98,7 +98,7 @@ class RemoveArgument(HexRaysPopupAction):
     """Remove the selected argument from the function signature."""
 
     description = "Remove Argument"
-    menu_path = "HexRaysPyTools/Function/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def check(self, hx_view: Any) -> bool:
         if hx_view is None or hx_view.item.citype != idaapi.VDI_LVAR:

@@ -11,7 +11,7 @@ def test_find_field_xrefs_is_xref_action() -> None:
     assert issubclass(FindFieldXrefs, HexRaysXrefAction)
     assert FindFieldXrefs.description == "Field Xrefs"
     assert FindFieldXrefs.hotkey == "Ctrl+X"
-    assert FindFieldXrefs.menu_path == "HexRaysPyTools/Structure/"
+    assert FindFieldXrefs.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_find_field_xrefs_accepts_session() -> None:

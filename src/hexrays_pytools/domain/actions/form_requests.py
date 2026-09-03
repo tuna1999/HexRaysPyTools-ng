@@ -104,7 +104,7 @@ class ShowStructureBuilder(HexRaysPopupAction):
 
     description = "Show Structure Builder"
     hotkey = "Alt+F8"
-    menu_path = "HexRaysPyTools/Structure/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

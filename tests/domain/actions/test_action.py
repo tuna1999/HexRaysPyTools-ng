@@ -80,14 +80,14 @@ def test_popup_request_handler_calls_attach_when_check_passes() -> None:
     action = MagicMock()
     action.check.return_value = True
     action.name = "test_action"
-    action.menu_path = "HexRaysPyTools/Scan/"
+    action.menu_path = "HexRaysPyTools-ng/"
     handler = HexRaysPopupRequestHandler(action)
     form = MagicMock()
     popup = MagicMock()
     hx_view = MagicMock()
     handler.handle(0, form, popup, hx_view)
     idaapi.attach_action_to_popup.assert_called_once_with(
-        form, popup, "test_action", "HexRaysPyTools/Scan/"
+        form, popup, "test_action", "HexRaysPyTools-ng/"
     )
 
 
@@ -112,7 +112,7 @@ def test_popup_action_default_menu_path_is_group_root() -> None:
         def check(self, hx_view):  # type: ignore[no-untyped-def]
             return True
 
-    assert _P().menu_path == "HexRaysPyTools/"
+    assert _P().menu_path == "HexRaysPyTools-ng/"
 
 
 def test_plain_action_has_no_menu_path() -> None:

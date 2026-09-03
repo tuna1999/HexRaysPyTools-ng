@@ -32,7 +32,7 @@ class SelectContainingStructure(HexRaysPopupAction):
     (CONTAINING_RECORD pattern)."""
 
     description = "Select Containing Structure"
-    menu_path = "HexRaysPyTools/Structure/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

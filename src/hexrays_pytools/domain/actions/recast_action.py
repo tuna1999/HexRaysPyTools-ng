@@ -29,7 +29,7 @@ class RecastItemLeft(HexRaysPopupAction):
 
     description = "Recast Item"
     hotkey = "Shift+L"
-    menu_path = "HexRaysPyTools/Recast/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def activate(self, ctx: Any) -> None:
         hx_view = self._get_hx_view(ctx)
@@ -64,7 +64,7 @@ class RecastItemRight(HexRaysPopupAction):
 
     description = "Recast Item"
     hotkey = "Shift+R"
-    menu_path = "HexRaysPyTools/Recast/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def activate(self, ctx: Any) -> None:
         hx_view = self._get_hx_view(ctx)

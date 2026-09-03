@@ -15,7 +15,7 @@ def test_create_new_field_is_popup_action() -> None:
     assert issubclass(CreateNewField, HexRaysPopupAction)
     assert CreateNewField.description == "Create New Field"
     assert CreateNewField.hotkey == "Ctrl+F"
-    assert CreateNewField.menu_path == "HexRaysPyTools/Structure/"
+    assert CreateNewField.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_create_vtable_is_action() -> None:

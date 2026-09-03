@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 _MAX_RENAME_ATTEMPTS = 64
 
 
-_RENAME_MENU_PATH = "HexRaysPyTools/Rename/"
+_RENAME_MENU_PATH = "HexRaysPyTools-ng/"
 
 # IDA-generated default names: a1, v3, var_5, qword_8, dword_4, field_12,
 # off_4, etc. Propagating a real name into these slots is the use case;

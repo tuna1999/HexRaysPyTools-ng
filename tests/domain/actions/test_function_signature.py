@@ -18,19 +18,19 @@ from hexrays_pytools.domain.actions.function_signature import (
 def test_convert_to_usercall_is_popup_action() -> None:
     assert issubclass(ConvertToUsercall, HexRaysPopupAction)
     assert ConvertToUsercall.description == "Convert to __usercall"
-    assert ConvertToUsercall.menu_path == "HexRaysPyTools/Function/"
+    assert ConvertToUsercall.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_add_remove_return_is_popup_action() -> None:
     assert issubclass(AddRemoveReturn, HexRaysPopupAction)
     assert AddRemoveReturn.description == "Add/Remove Return"
-    assert AddRemoveReturn.menu_path == "HexRaysPyTools/Function/"
+    assert AddRemoveReturn.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_remove_argument_is_popup_action() -> None:
     assert issubclass(RemoveArgument, HexRaysPopupAction)
     assert RemoveArgument.description == "Remove Argument"
-    assert RemoveArgument.menu_path == "HexRaysPyTools/Function/"
+    assert RemoveArgument.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_all_three_accept_session() -> None:

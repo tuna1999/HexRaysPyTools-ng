@@ -13,13 +13,13 @@ from hexrays_pytools.domain.actions.recast_action import RecastItemLeft, RecastI
 def test_recast_left_init() -> None:
     a = RecastItemLeft()
     assert a.hotkey == "Shift+L"
-    assert a.menu_path == "HexRaysPyTools/Recast/"
+    assert a.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_recast_right_init() -> None:
     a = RecastItemRight()
     assert a.hotkey == "Shift+R"
-    assert a.menu_path == "HexRaysPyTools/Recast/"
+    assert a.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_recast_left_check_none_returns_false() -> None:

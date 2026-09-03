@@ -48,7 +48,7 @@ class Scanner(HexRaysPopupAction):
 
     description = "Scan"
     hotkey: str | None = None
-    menu_path = "HexRaysPyTools/Scan/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

@@ -56,7 +56,7 @@ class GetStructureBySize(HexRaysPopupAction):
     """List existing structures whose size matches the selected number literal."""
 
     description = "Structures with this size"
-    menu_path = "HexRaysPyTools/Structure/"
+    menu_path = "HexRaysPyTools-ng/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

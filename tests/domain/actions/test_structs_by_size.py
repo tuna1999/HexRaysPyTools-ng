@@ -15,7 +15,7 @@ from hexrays_pytools.domain.actions.structs_by_size import GetStructureBySize
 def test_get_structure_by_size_is_popup_action() -> None:
     assert issubclass(GetStructureBySize, HexRaysPopupAction)
     assert GetStructureBySize.description == "Structures with this size"
-    assert GetStructureBySize.menu_path == "HexRaysPyTools/Structure/"
+    assert GetStructureBySize.menu_path == "HexRaysPyTools-ng/"
 
 
 def test_get_structure_by_size_accepts_session() -> None:
