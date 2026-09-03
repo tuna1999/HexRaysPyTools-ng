@@ -108,9 +108,11 @@ class PotentialNegativeCollector:
         self._session = session
 
     def handle(self, event: int, *args: Any) -> None:
-        cfunc, level_of_maturity = args
+        if len(args) < 2 or self._session is None:
+            return
+        cfunc, level_of_maturity = args[0], args[1]
         if int(level_of_maturity) == idaapi.CMAT_BUILT:
-            collect_potential_negatives(cfunc)
+            collect_potential_negatives(cfunc, self._session.potential_negatives)
 
 
 class StructXrefCollector:
@@ -128,9 +130,11 @@ class StructXrefCollector:
         self._session = session
 
     def handle(self, event: int, *args: Any) -> None:
-        if not args:
+        if len(args) < 2:
             return
-        cfunc = args[0]
+        cfunc, level_of_maturity = args[0], args[1]
+        if int(level_of_maturity) != int(idaapi.CMAT_FINAL):
+            return
         if self._session is None or self._session.xrefs is None:
             logger.debug("StructXrefCollector: no session/xrefs — skipping")
             return

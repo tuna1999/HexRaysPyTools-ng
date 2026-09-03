@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from ..session import Session
 
 
+def _store(session: Session | None) -> dict[int, dict[int, Any]]:
+    """The session's potential-negatives store (empty when no session)."""
+    return session.potential_negatives if session is not None else {}
+
+
 def _get_hx_view(ctx: Any) -> Any:
     return idaapi.get_widget_vdui(ctx.widget)
 
@@ -35,17 +40,15 @@ class SelectContainingStructure(HexRaysPopupAction):
     def activate(self, ctx: Any) -> None:
         hx_view = _get_hx_view(ctx)
         if hx_view is not None:
-            select_containing_structure(hx_view)
+            select_containing_structure(hx_view, _store(self._session))
 
     def check(self, hx_view: Any) -> bool:
-        return can_select_containing(hx_view)
+        return can_select_containing(hx_view, _store(self._session))
 
 
 class ResetContainingStructure(HexRaysPopupAction):
     """Undo a previous SelectContainingStructure assignment."""
-
     description = "Reset Containing Structure"
-    menu_path = "HexRaysPyTools/Structure/"
 
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)

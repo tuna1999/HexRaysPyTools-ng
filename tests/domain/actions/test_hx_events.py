@@ -7,7 +7,7 @@ and that handle does not raise on a synthetic cfunc at a non-matching level.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import idaapi
 
@@ -90,6 +90,18 @@ def test_struct_xref_collector_handle_no_session_skips() -> None:
     StructXrefCollector().handle(*_evt(cfunc, idaapi.CMAT_FINAL))
 
 
+def test_struct_xref_collector_handle_non_matching_level() -> None:
+    """At CMAT_BUILT (not CMAT_FINAL) the collector must not walk the ctree."""
+    from hexrays_pytools.domain.actions import hx_events
+
+    session = MagicMock()
+    handler = StructXrefCollector(session=session)
+    cfunc = MagicMock()
+    with patch.object(hx_events, "StructXrefCollectorVisitor") as visitor_cls:
+        handler.handle(*_evt(cfunc, idaapi.CMAT_BUILT))
+    visitor_cls.assert_not_called()
+
+
 def test_struct_xref_collector_handle_uses_session_storage() -> None:
     """With a session, the handler uses session.xrefs (not a fresh XrefStorage)."""
     from hexrays_pytools.domain.xrefs.xref_storage import XrefStorage
@@ -104,6 +116,21 @@ def test_struct_xref_collector_handle_uses_session_storage() -> None:
     handler.handle(*_evt(cfunc, idaapi.CMAT_FINAL))
     # session.xrefs.identity should be unchanged (same instance).
     assert session.xrefs is session.xrefs
+
+
+def test_struct_xref_collector_walks_only_at_final() -> None:
+    """The visitor runs exactly once, at CMAT_FINAL."""
+    from hexrays_pytools.domain.actions import hx_events
+
+    session = MagicMock()
+    handler = StructXrefCollector(session=session)
+    cfunc = MagicMock()
+    with patch.object(hx_events, "StructXrefCollectorVisitor") as visitor_cls:
+        handler.handle(*_evt(cfunc, idaapi.CMAT_BUILT))
+        handler.handle(*_evt(cfunc, idaapi.CMAT_TRANS1))
+        visitor_cls.assert_not_called()
+        handler.handle(*_evt(cfunc, idaapi.CMAT_FINAL))
+    visitor_cls.assert_called_once()
 
 
 def test_silent_if_swapper_handle_non_matching_level() -> None:

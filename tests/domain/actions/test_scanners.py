@@ -178,3 +178,80 @@ def test_all_six_actions_accept_session() -> None:
     ):
         a = cls(session=session)
         assert a._session is session
+
+
+def _make_session(scan_any_type: bool) -> tuple[MagicMock, MagicMock]:
+    session = MagicMock()
+    session.scan_any_type = scan_any_type
+    legal_type = MagicMock()
+    legal_type.equals_to.return_value = False
+    session.consts.legal_types = [legal_type]
+    return session, legal_type
+
+
+def _basic_tinfo() -> MagicMock:
+    """A mock tinfo that passes the base is_legal_type checks (not ptr/unknown)."""
+    tinfo = MagicMock()
+    tinfo.is_ptr.return_value = False
+    tinfo.is_unknown.return_value = False
+    return tinfo
+
+
+def test_is_scannable_scan_any_type_true_accepts_any_type() -> None:
+    session, legal = _make_session(scan_any_type=True)
+    action = ShallowScanVariable(session=session)
+    assert action._is_scannable(_basic_tinfo()) is True
+    legal.equals_to.assert_not_called()
+
+
+def test_is_scannable_scan_any_type_false_rejects_non_legal_type() -> None:
+    session, legal = _make_session(scan_any_type=False)
+    action = ShallowScanVariable(session=session)
+    assert action._is_scannable(_basic_tinfo()) is False
+    legal.equals_to.assert_called_once()
+
+
+def test_is_scannable_scan_any_type_false_accepts_legal_type() -> None:
+    session, legal = _make_session(scan_any_type=False)
+    legal.equals_to.return_value = True
+    action = ShallowScanVariable(session=session)
+    assert action._is_scannable(_basic_tinfo()) is True
+
+
+def test_is_scannable_scan_any_type_false_accepts_forward_decl_pointer() -> None:
+    session, _legal = _make_session(scan_any_type=False)
+    tinfo = MagicMock()
+    tinfo.is_ptr.return_value = True
+    tinfo.get_pointed_object.return_value.is_forward_decl.return_value = True
+    tinfo.get_pointed_object.return_value.get_size.return_value = object()  # != BADSIZE
+    action = ShallowScanVariable(session=session)
+    assert action._is_scannable(tinfo) is True
+
+
+def test_deep_scan_functions_update_attaches_to_funcs_popup() -> None:
+    """In the Functions chooser, the action must attach itself to the popup."""
+    import idaapi  # type: ignore[import-not-found]
+
+    a = DeepScanFunctions()
+    ctx = MagicMock()
+    with patch.object(idaapi, "BWN_FUNCS", 40), patch.object(
+        idaapi, "AST_ENABLE_FOR_WIDGET", 1
+    ) as _ast, patch.object(idaapi, "attach_action_to_popup") as attach:
+        ctx.widget_type = 40
+        result = a.update(ctx)
+    assert result == 1
+    attach.assert_called_once_with(ctx.widget, None, a.name)
+
+
+def test_deep_scan_functions_update_other_widget_no_attach() -> None:
+    import idaapi  # type: ignore[import-not-found]
+
+    a = DeepScanFunctions()
+    ctx = MagicMock()
+    with patch.object(idaapi, "BWN_FUNCS", 40), patch.object(
+        idaapi, "AST_DISABLE_FOR_WIDGET", 2
+    ) as _ast, patch.object(idaapi, "attach_action_to_popup") as attach:
+        ctx.widget_type = 99
+        result = a.update(ctx)
+    assert result == 2
+    attach.assert_not_called()

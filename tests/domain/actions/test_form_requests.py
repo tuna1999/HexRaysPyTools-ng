@@ -170,3 +170,52 @@ def test_show_classes_raises_when_factory_not_wired() -> None:
         pytest.raises(RuntimeError, match="class_viewer_factory not wired"),
     ):
         a.activate(MagicMock())
+
+
+def test_show_graph_update_attaches_to_loctyps_popup() -> None:
+    """In the Local Types chooser, ShowGraph must attach itself to the popup."""
+    import idaapi  # type: ignore[import-not-found]
+
+    a = ShowGraph()
+    ctx = MagicMock()
+    with patch.object(idaapi, "BWN_LOCTYPS", 41), patch.object(
+        idaapi, "AST_ENABLE_FOR_WIDGET", 1
+    ), patch.object(idaapi, "attach_action_to_popup") as attach:
+        ctx.widget_type = 41
+        result = a.update(ctx)
+    assert result == 1
+    attach.assert_called_once_with(ctx.widget, None, a.name)
+
+
+def test_show_graph_recreates_viewer_after_window_closed() -> None:
+    """A closed graph window (GetWidget() -> None) must not block reopening."""
+    session = MagicMock()
+    factory = MagicMock(side_effect=lambda graph: MagicMock())
+    session.structure_graph_viewer_factory = factory
+    a = ShowGraph(session=session)
+    # First open — factory called once.
+    ctx = MagicMock()
+    ctx.chooser_selection = [0]
+    a.activate(ctx)
+    assert factory.call_count == 1
+    # Simulate the user closing the window: viewer alive but widget gone.
+    closed_viewer = a.graph_view
+    closed_viewer.GetWidget.return_value = None
+    a.activate(ctx)
+    assert factory.call_count == 2
+    assert a.graph_view is not closed_viewer
+
+
+def test_show_graph_reuses_live_viewer() -> None:
+    """An open graph window is reused (no new factory call)."""
+    session = MagicMock()
+    factory = MagicMock(side_effect=lambda graph: MagicMock())
+    session.structure_graph_viewer_factory = factory
+    a = ShowGraph(session=session)
+    ctx = MagicMock()
+    ctx.chooser_selection = [0]
+    a.activate(ctx)
+    a.graph_view.GetWidget.return_value = MagicMock()  # window still open
+    a.activate(ctx)
+    assert factory.call_count == 1
+    a.graph_view.change_selected.assert_called_once_with([1])

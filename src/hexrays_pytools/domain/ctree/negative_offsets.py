@@ -24,10 +24,10 @@ from ..til.type_library import choose_til, import_type
 
 logger = logging.getLogger(__name__)
 
-# Per-cfunc cache of potential CONTAINING_RECORD candidates populated by the
-# hxe_maturity/CMAT_BUILT collector and consumed by the Select action. Keyed
-# by the cfunc entry ea (so two open views don't collide).
-potential_negatives: dict[int, dict[int, Any]] = {}
+# Potential-negative candidates live in Session.potential_negatives (keyed by
+# cfunc entry ea so two open views don't collide); the hxe_maturity/CMAT_BUILT
+# collector populates them and the Select action consumes them. The functions
+# below take the store dict as a parameter — no module-global mutable state.
 
 
 # --- Magic comment helpers ----------------------------------------------------
@@ -346,7 +346,7 @@ class AnalyseVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
 # --- The hxe_maturity collector (CMAT_BUILT) ----------------------------------
 
 
-def collect_potential_negatives(cfunc: Any) -> None:
+def collect_potential_negatives(cfunc: Any, potential_negatives: dict[int, dict[int, Any]]) -> None:
     """Run at CMAT_BUILT: find + apply CONTAINING_RECORD patterns.
 
     Mirrors the original PotentialNegativeCollector handler:
@@ -354,6 +354,9 @@ def collect_potential_negatives(cfunc: Any) -> None:
       2. parse magic comments on lvars
       3. analyse struct-pointer accesses for out-of-bounds candidates
       4. rewrite resolved negatives as CONTAINING_RECORD
+
+    ``potential_negatives`` is the Session-owned store (entry_ea -> candidates)
+    updated in place.
     """
     entry_ea = int(cfunc.entry_ea)
     # Step 1: existing CONTAINING_RECORD macros
@@ -390,7 +393,7 @@ def collect_potential_negatives(cfunc: Any) -> None:
 # --- Action helpers (Select / Reset) ------------------------------------------
 
 
-def can_select_containing(hx_view: Any) -> bool:
+def can_select_containing(hx_view: Any, potential_negatives: dict[int, dict[int, Any]]) -> bool:
     """True when the cursor is on a struct-pointer lvar that's a candidate."""
     if hx_view is None:
         return False
@@ -412,7 +415,9 @@ def can_reset_containing(hx_view: Any) -> bool:
     return _has_magic_comment(lvars[item.e.v.idx])
 
 
-def select_containing_structure(hx_view: Any) -> bool:
+def select_containing_structure(
+    hx_view: Any, potential_negatives: dict[int, dict[int, Any]]
+) -> bool:
     """Prompt for a containing struct, write its magic comment on the lvar."""
     if hx_view is None:
         return False

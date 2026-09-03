@@ -34,16 +34,22 @@ class ShowGraph(Action):
         self.graph: StructureGraph | None = None
         self.graph_view: StructureGraphViewer | None = None
 
+    def _viewer_alive(self) -> bool:
+        """True if the previous graph window is still open."""
+        return self.graph_view is not None and self.graph_view.GetWidget() is not None
+
     def activate(self, ctx: Any) -> None:
-        # Re-show the existing graph if open, otherwise build a new one.
-        if self.graph_view is not None:
+        selection = [int(sel) + 1 for sel in ctx.chooser_selection]
+        # Re-show the existing graph if its window is still open; the viewer
+        # object survives window close, so check the underlying TWidget.
+        if self._viewer_alive():
             try:
-                self.graph_view.change_selected([int(sel) + 1 for sel in ctx.chooser_selection])
-                self.graph_view.Refresh()
+                self.graph_view.change_selected(selection)  # type: ignore[union-attr]
+                self.graph_view.Refresh()  # type: ignore[union-attr]
                 return
             except (AttributeError, RuntimeError):
                 pass
-        self.graph = StructureGraph([int(sel) + 1 for sel in ctx.chooser_selection])
+        self.graph = StructureGraph(selection)
         # F1.b: use session factory instead of direct widget import
         if self._session is None or self._session.structure_graph_viewer_factory is None:
             raise RuntimeError("structure_graph_viewer_factory not wired; plugin init incomplete")
@@ -56,6 +62,9 @@ class ShowGraph(Action):
 
     def update(self, ctx: Any) -> int:
         if int(ctx.widget_type) == int(idaapi.BWN_LOCTYPS):
+            # Attach to the Local Types chooser popup so the action is
+            # reachable from the right-click menu (legacy pattern).
+            idaapi.attach_action_to_popup(ctx.widget, None, self.name)
             return int(idaapi.AST_ENABLE_FOR_WIDGET)
         return int(idaapi.AST_DISABLE_FOR_WIDGET)
 

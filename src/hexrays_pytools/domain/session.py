@@ -52,6 +52,10 @@ class Session:
     imported_ea: set[int] = field(default_factory=set)
     demangled_names: dict[str, set[int]] = field(default_factory=dict)
     touched_functions: set[int] = field(default_factory=set)
+    # CONTAINING_RECORD candidates per cfunc (entry_ea -> lvar idx -> candidate).
+    # Populated by the CMAT_BUILT collector, consumed by the Select action.
+    potential_negatives: dict[int, dict[int, Any]] = field(default_factory=dict)
+
 
     # tinfo singletons for the active IDB (replaces core/const.py module globals)
     consts: Consts | None = None
@@ -79,6 +83,9 @@ class Session:
             return
         if self.xrefs and self.store_xrefs:
             self.xrefs.flush()
+        # Drop ctree-coupled state — tinfo/cfunc objects from this IDB must
+        # not survive into a session for another database.
+        self.potential_negatives.clear()
         self.is_open = False
         logger.info("Session closed")
 
@@ -169,5 +176,8 @@ class Session:
         self.templated = TemplatedTypes(self.templated_types_file)
         self.recon = ReconWorkspace(self.templated)
         self.xrefs = XrefStorage()
-        self.xrefs.open()
+        if self.store_xrefs:
+            # Only load persisted xrefs when persistence is enabled —
+            # otherwise start from a clean in-memory store for this session.
+            self.xrefs.open()
         logger.debug("Workspaces initialized (recon + xrefs + templated types)")

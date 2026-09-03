@@ -22,6 +22,7 @@ from ...domain.scanner.member_extractor import (
     NewShallowSearchVisitor,
 )
 from ...domain.scanner.scanned_object import (
+    SO_GLOBAL_OBJECT,
     SO_LOCAL_VARIABLE,
     ReturnedObject,
     ScanObject,
@@ -52,6 +53,29 @@ class Scanner(HexRaysPopupAction):
     def __init__(self, session: Session | None = None) -> None:
         super().__init__(session)
 
+    def _is_scannable(self, tinfo: Any) -> bool:
+        """Type eligibility honoring the ``scan_any_type`` setting.
+
+        When ``scan_any_type`` is False (default), only the fallback legal
+        types (``Consts.legal_types``) and pointers to forward declarations
+        pass — matching the plugin manifest's documented behavior. When
+        True, any usable (non-unknown) type passes.
+        """
+        if self._session is None or self._session.scan_any_type:
+            return bool(is_legal_type(tinfo))
+        consts = self._consts()
+        if consts is None:
+            return bool(is_legal_type(tinfo))
+        stripped = idaapi.tinfo_t(tinfo)
+        stripped.clr_const()
+        if any(lt.equals_to(stripped) for lt in consts.legal_types):
+            return True
+        return bool(
+            tinfo.is_ptr()
+            and tinfo.get_pointed_object().is_forward_decl()
+            and is_legal_type(tinfo)
+        )
+
     def _can_be_scanned(self, cfunc: Any, ctree_item: Any) -> bool:
         """Return True if the ctree_item is a scan target with a legal tinfo."""
         obj = ScanObject.create(cfunc, ctree_item)
@@ -59,7 +83,7 @@ class Scanner(HexRaysPopupAction):
             return False
         if obj.tinfo is None:
             return False
-        return bool(is_legal_type(obj.tinfo))
+        return self._is_scannable(obj.tinfo)
 
     def check(self, hx_view: Any) -> bool:
         cfunc, ctree_item = hx_view.cfunc, hx_view.item
@@ -211,8 +235,8 @@ class RecognizeShape(Scanner):
             # Local variable
             assert isinstance(obj, VariableObject)
             hx_view.set_lvar_type(obj.lvar, tinfo)
-        elif int(obj.id) == int(idaapi.cot_obj):
-            # cot_obj — global
+        elif int(obj.id) == int(SO_GLOBAL_OBJECT):
+            # SO_GLOBAL_OBJECT — global variable reference (cot_obj)
             idaapi.apply_tinfo(int(obj.ea), tinfo, idaapi.TINFO_DEFINITE)
         hx_view.refresh_view(True)
 
@@ -233,7 +257,7 @@ class DeepScanReturn(Scanner):
             return False
         func_tinfo = idaapi.tinfo_t()
         cfunc.get_func_type(func_tinfo)
-        return bool(is_legal_type(func_tinfo.get_rettype()))
+        return self._is_scannable(func_tinfo.get_rettype())
 
     def activate(self, ctx: Any) -> None:
         hx_view = idaapi.get_widget_vdui(ctx.widget)
@@ -266,6 +290,9 @@ class DeepScanFunctions(Action):
 
     def update(self, ctx: Any) -> int:
         if int(ctx.widget_type) == int(idaapi.BWN_FUNCS):
+            # Attach to the Functions chooser popup so the action is
+            # reachable from the right-click menu (legacy pattern).
+            idaapi.attach_action_to_popup(ctx.widget, None, self.name)
             return int(idaapi.AST_ENABLE_FOR_WIDGET)
         return int(idaapi.AST_DISABLE_FOR_WIDGET)
 
