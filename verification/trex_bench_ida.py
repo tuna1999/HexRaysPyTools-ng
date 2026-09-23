@@ -47,6 +47,8 @@ _LOCAL_TYPES_DECL = (
     "union Mix { unsigned int u32; unsigned char b[4]; };"
     "struct NegInner { int x; };"
     "struct NegOuter { int tag; struct NegInner inner; };"
+    "struct Neg16Inner { short x; };"
+    "struct Neg16Outer { short tag; short pad; struct Neg16Inner inner; };"
 )
 
 
@@ -102,15 +104,13 @@ BENCH.update(
 BENCH_NEGATIVE_OFFSETS: dict[str, dict[str, Any]] = {
     "NegOuter": {
         "funcs": ["neg_offset_access"],
-        # tag@0 (Outer), inner.x@0 (Inner), tag+offset together occupy
-        # absolute offsets 0 (Outer.tag) and 4 (Inner within Outer)... but
-        # we measure what the scanner can recover from a SINGLE lvar's
-        # CONTAINING_RECORD application — only NegOuter's tag (@0) is the
-        # containing access; the inner.x is a regular inner access (@0).
-        # Score it against gt [[0, 4]] (Outer.tag) and [[0, 4]] (Inner.x)
-        # are the same offset — measurement target is the containing tag.
         "fields": [[0, 4]],
         "magic_comment": "```NegOuter+0```",
+    },
+    "Neg16Outer": {
+        "funcs": ["neg16_access"],
+        "fields": [[0, 2]],
+        "magic_comment": "```Neg16Outer+0```",
     },
 }
 

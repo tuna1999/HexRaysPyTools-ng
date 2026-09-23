@@ -46,6 +46,8 @@ struct Funcy   { int32_t id; int32_t (*cb)(int32_t); void* ctx; };
 struct Shapes  { char tag; int64_t val; };
 struct NegInner { int32_t x; };
 struct NegOuter { int32_t tag; struct NegInner inner; };
+struct Neg16Inner { int16_t x; };
+struct Neg16Outer { int16_t tag; int16_t pad; struct Neg16Inner inner; };
 
 __attribute__((noinline)) static void sink_i(int v) { g_sink = v; }
 __attribute__((noinline)) static void sink_p(void* p) { g_psink = p; }
@@ -164,6 +166,10 @@ __attribute__((noinline)) int neg_offset_access(struct NegInner* p) {
     return ((struct NegOuter*)((char*)p - 4))->tag + p->x;
 }
 
+__attribute__((noinline)) int neg16_access(struct Neg16Inner* p) {
+    return ((struct Neg16Outer*)((char*)p - 4))->tag + p->x;
+}
+
 static int cb_impl(int32_t x) { return (int)x * 3; }
 
 int main(void) {
@@ -203,6 +209,10 @@ int main(void) {
     {
         struct NegInner ni = {0};
         sink_i(neg_offset_access(&ni));
+    }
+    {
+        struct Neg16Inner n16 = {0};
+        sink_i(neg16_access(&n16));
     }
     return g_sink == 0 && g_psink != 0 ? 0 : 1;
 }
