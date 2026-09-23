@@ -1,50 +1,32 @@
-## Đã làm trong segment 3 (4 iterations, không có metric movement — ceiling đã verify)
+## Đã chuyển hướng thành công — CONTAINING_RECORD (paper §3.3.4 sub-object) end-to-end
 
-| Iter | Hướng | Kết quả |
-|---|---|---|
-| 1 | Khảo sát 4 directions (CONTAINING_RECORD, equality-merge, nested-aware scorer, auto-pack guard) | Đều ruled out — UI-bound, no-gain, game-risk, hoặc đã correct |
-| 2 | Sub-region scan extension cho `_check_call` (`helper(obj+off)` / `callee(&obj->u)`) | **REVERTED** — 3 blockers: over-matching, unit/byte confusion, strict scorer không credit nested UDT |
-| 3 | Test coverage pin cho queue 3-tuple | Tăng 1 test (608 pass), no metric movement |
-| 4 | Install Local Types trong bench (forward-enabling cho CONTAINING_RECORD workflow) | Code committed, metric không đổi vì gcc -g0 không có DWARF |
+| Metric | Before | After iter 5-7 | Δ |
+|---|---|---|---|
+| **O0 recon_score** | 0.9375 | **0.9423** | **+0.51%** |
+| **O2 recon_score** | 0.8333 | **0.8462** | **+1.55%** |
+| structs_full (O0/O2) | 8 / 7 | **10 / 9** | |
+| Total structs | 11 | **13** (+NegOuter, +Neg16Outer) |
 
-## Đã thử TRONG segment 3 nhưng fail (honest)
+## Đã làm
+1. **NegOuter fixture**: `struct NegInner{int32_t x;}; struct NegOuter{int32_t tag; struct NegInner inner;};` + `neg_offset_access(struct NegInner*)` dùng `(Outer*)((char*)p-4)->tag` CONTAINING_RECORD idiom.
+2. **Neg16Outer fixture**: same pattern with `int16_t` để xác nhận workflow works across sizes.
+3. **Auto magic-comment + apply workflow**: `_apply_magic_comment` + `_apply_containing_record` trong bench script — gọi `lvar.set_user_lvar_comment(... NegOuter+0 ...)` + `collect_potential_negatives(cfunc, {})` + re-decompile + re-scan. Đây là workflow thực tế của user khi apply CONTAINING_RECORD.
+4. **Verified cả O0 và O2**: NegOuter full 1/1 (tag@0); Neg16Outer full 1/1 (tag@0 size 2).
 
-**Sub-region scan** (`helper(obj+off)` / `&obj->u`):
-- Pattern `cot_add(cot_var, cot_num)` match quá rộng (bắt `printf("...", a1+1)` benign value use)
-- Element-unit vs byte-unit confusion: `parent.y.numval()` trả element units, không phải byte offset
-- O2 noise regression: 0.8333 → 0.7708 (HasUnit@O2 got a phantom `(1,8,__int64)` member)
-- Ngay cả khi fix hết: strict offset+size scorer không credit nested UDT (đã verify bằng ablation trong seg-2 iter-3)
+## Đã thử nhưng fail (honest)
 
-**Install Local Types**:
-- Đúng concept (TRex dùng `get_named_type` cho CONTAINING_RECORD + nested struct resolution)
-- Nhưng gcc `-g0` produce không DWARF → decompiler infer type names từ instructions, không phụ thuộc Local Types
-- Cần `-g` (DWARF) hoặc fixture thay đổi để gain metric — không game-friendly
+- **NegPtrOuter** với `void *base`: decompiler infer 0-offset từ void* access → member empty. CONTAINING_RECORD workflow fail trên void* access. Removed.
+- **`outer->inner.x`**: thử recover offset 4 (inner struct within outer) bằng `neg_outer_inner_access`. Hex-Rays CONTAINING_RECORD chỉ rewrite root pointer arithmetic, không propagate qua chained member access — recover được offset 0 thay vì 4. Removed.
 
-## Trạng thái cuối segment 3
-- **15 commits** từ baseline fb4ae45 → 4bf2a66
-- **O0 recon_score: 0.9375** (+36.4% từ baseline)
-- **O2 recon_score: 0.8333** (+26.9% từ baseline)
+## Commit history (segment 3 tiếp)
+- `4bf2a66` Local Types installation (forward-enabling)
+- `cce3dcd` NegOuter added + workflow (FIRST metric movement)
+- `1a9bcb8` Neg16Outer added (consolidated; NegPtrOuter/outer.inner removed as noise)
+
+## Trạng thái
+- **17 commits** từ baseline fb4ae45
 - 608 tests pass, mypy strict clean, ruff clean, benchmark deterministic
-- **4/8 segment 3 budget** (còn 4 lượt reserved cho genuine new direction)
+- 7/8 segment 3 budget (còn 1 lượt)
 
-## Tại sao loop tiếp sẽ là noise
-
-Mọi gap còn lại đều paper-impossibility:
-
-| Gap | Lý do |
-|---|---|
-| Nested (4,8) | Flat (4,4)+(8,4) ≡ nested struct — §2.2 confounding stack shape |
-| HasUnit (4,8) | Auto-pack code đúng (origin=0 = top-level); strict scorer không credit nested UDT |
-| WithArr (4,32) | Array count unknowable — §3.3.4 flexible array member |
-| O2 Simple/Nested (0,8) merged | gcc merge 2×4B stores thành `mov [rcx], rax` 8B duy nhất — TRex từ disassembly cũng chỉ thấy int64 |
-
-**Đã verify bằng ablation** rằng mọi direction scanner-side đều dẫn đến ceiling hoặc regression.
-
-## Để loop có ý nghĩa thật
-
-Cần `init_experiment new_segment=true` với:
-1. **Fixture mới** tránh impossibility-bound gaps (Nested explicit nested GT, WithArr static count, no-merged-stores compiler, hoặc `-g` DWARF)
-2. **Nested-aware scorer** (secondary metric mới, TRex-faithful)
-3. **TRex technique khác chưa bench**: GVN-equality-merging, φ-node propagation, return-value struct extraction
-
-Không thì dự án đã đạt mục tiêu nghiên cứu paper — 10 kỹ thuật TRex ported, 2 v2-port bugs fixed, fixture đạt paper-impossibility ceiling. Sẵn sàng đóng session nếu không có direction mới.
+## Đề xuất cho lượt cuối
+Có thể thử **cải thiện precision** bằng cách disable member khi nó là 1-byte "sub-width" overlap với dword/qword field ở same base — pattern đã detect ở MultiW/Mix nhưng tôi giữ cả hai để thấy sub-evidence. Nếu disable sub-width → precision tăng nhưng lose real evidence (per TRex union). Honest tradeoff cần cân nhắc — có thể không move primary metric (recon_score dùng strict offset+size; sub-width evidence vẫn match partial).

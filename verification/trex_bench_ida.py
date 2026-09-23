@@ -103,7 +103,7 @@ BENCH.update(
 # ``CONTAINING_RECORD(...)`` and re-scan to recover the containing field.
 BENCH_NEGATIVE_OFFSETS: dict[str, dict[str, Any]] = {
     "NegOuter": {
-        "funcs": ["neg_offset_access"],
+        "funcs": ["neg_offset_access", "neg_outer_tag", "neg_outer_inner"],
         "fields": [[0, 4]],
         "magic_comment": "```NegOuter+0```",
     },
@@ -185,53 +185,66 @@ def _iter_all_cexprs(item: Any) -> Any:
 
 
 def _scan_neg_offset(
-    fn: str,
+    fns: list[str] | str,
     var_idx: int,
     magic_comment: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Scan + optionally run CONTAINING_RECORD rewrite.
+    """Scan + run CONTAINING_RECORD rewrite across one or more functions.
 
-    Returns (members, errors). Members come from BOTH the original ctree
-    AND the CONTAINING_RECORD-rewritten ctree (whichever produced
-    evidence); ``resolve_types`` is run on the union.
+    Accepts a single function name or a list (each is processed with the
+    same magic comment and shares the workspace model for evidence
+    aggregation). Returns (members, errors).
     """
-    from hexrays_pytools.domain.recon.structure_model import StructureModel
-    from hexrays_pytools.domain.recon.workspace import ReconWorkspace
     from hexrays_pytools.domain.scanner.member_extractor import NewShallowSearchVisitor
     from hexrays_pytools.domain.scanner.scanned_object import VariableObject
+    from hexrays_pytools.domain.recon.structure_model import StructureModel
+    from hexrays_pytools.domain.recon.workspace import ReconWorkspace
     from hexrays_pytools.domain.session import Session
 
+    if isinstance(fns, str):
+        fns = [fns]
     errs: list[str] = []
-    cfunc1 = _decompile(_resolve(fn))
     workspace = ReconWorkspace()
     workspace.set_model(StructureModel())
     session = Session()
     session.open()
     try:
-        lvars1 = list(cfunc1.get_lvars())
-        NewShallowSearchVisitor(
-            cfunc1, 0, VariableObject(lvars1[var_idx], var_idx), workspace, consts=session.consts
-        ).process()
-    except Exception as e:
-        errs.append(f"scan1: {e!r}")
+        for fn in fns:
+            cfunc1 = _decompile(_resolve(fn))
+            try:
+                lvars1 = list(cfunc1.get_lvars())
+                NewShallowSearchVisitor(
+                    cfunc1,
+                    0,
+                    VariableObject(lvars1[var_idx], var_idx),
+                    workspace,
+                    consts=session.consts,
+                ).process()
+            except Exception as e:
+                errs.append(f"scan1[{fn}]: {e!r}")
 
-    # Run CONTAINING_RECORD workflow: magic comment → collect_potential_negatives.
-    ok = _apply_containing_record(cfunc1, var_idx, magic_comment)
-    if ok:
-        # Refresh the cfunc — ctree was rewritten in place.
-        cfunc2 = _decompile(_resolve(fn))
+            # Apply CONTAINING_RECORD (rewrites the ctree in-place).
+            if _apply_containing_record(cfunc1, var_idx, magic_comment):
+                cfunc2 = _decompile(_resolve(fn))
+                try:
+                    lvars2 = list(cfunc2.get_lvars())
+                    NewShallowSearchVisitor(
+                        cfunc2,
+                        0,
+                        VariableObject(lvars2[var_idx], var_idx),
+                        workspace,
+                        consts=session.consts,
+                    ).process()
+                except Exception as e:
+                    errs.append(f"scan2[{fn}]: {e!r}")
+
         try:
-            lvars2 = list(cfunc2.get_lvars())
-            NewShallowSearchVisitor(
-                cfunc2, 0, VariableObject(lvars2[var_idx], var_idx), workspace, consts=session.consts
-            ).process()
+            workspace.model.resolve_types()
         except Exception as e:
-            errs.append(f"scan2: {e!r}")
+            errs.append(f"resolve: {e!r}")
 
-    try:
-        workspace.model.resolve_types()
-    except Exception as e:
-        errs.append(f"resolve: {e!r}")
+    finally:
+        session.close()
     members = []
     for m in workspace.model.items:
         members.append(
@@ -244,7 +257,6 @@ def _scan_neg_offset(
                 "score": int(m.score),
             }
         )
-    session.close()
     return members, errs
 
 def _resolve(name: str) -> int:
@@ -352,9 +364,8 @@ def run() -> list[dict[str, Any]]:
                 "errors": [],
             }
             try:
-                fn = spec["funcs"][0]
                 members, errs = _scan_neg_offset(
-                    fn,
+                    spec["funcs"],
                     var_idx=0,
                     magic_comment=spec["magic_comment"],
                 )

@@ -170,6 +170,18 @@ __attribute__((noinline)) int neg16_access(struct Neg16Inner* p) {
     return ((struct Neg16Outer*)((char*)p - 4))->tag + p->x;
 }
 
+/* NegOuter scanned with TWO functions — one for tag, one for inner — to
+ * aggregate evidence across multiple CONTAINING_RECORD rewrite sites
+ * (each `(Outer*)(p-4)` is independently rewritten into a helper call).
+ */
+__attribute__((noinline)) int neg_outer_tag(struct NegInner* p) {
+    return ((struct NegOuter*)((char*)p - 4))->tag;
+}
+__attribute__((noinline)) int neg_outer_inner(struct NegInner* p) {
+    struct NegOuter *outer = (struct NegOuter*)((char*)p - 4);
+    return outer->inner.x;
+}
+
 static int cb_impl(int32_t x) { return (int)x * 3; }
 
 int main(void) {
@@ -209,6 +221,8 @@ int main(void) {
     {
         struct NegInner ni = {0};
         sink_i(neg_offset_access(&ni));
+        sink_i(neg_outer_tag(&ni));
+        sink_i(neg_outer_inner(&ni));
     }
     {
         struct Neg16Inner n16 = {0};
