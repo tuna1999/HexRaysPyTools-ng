@@ -640,6 +640,7 @@ class StructureModel(QtCore.QAbstractTableModel):
             current_score = item_score
 
         self._subsume_array_elements()
+        self._pack_contiguous_colocations()
         self._refresh_collisions()
         self.layoutChanged.emit()
 
@@ -672,6 +673,115 @@ class StructureModel(QtCore.QAbstractTableModel):
                 if delta >= elem and delta % elem == 0 and int(item.size) == elem:
                     item.set_enabled(False)
                     break
+
+    def _pack_contiguous_colocations(self) -> None:
+        """Pack adjacent same-width members sharing a scanned origin.
+
+        TRex §3.3.4 aggregate analysis: two contiguous members of the same
+        width W at offsets (X, W) and (X+W, W) that share at least one
+        ``scanned_variables`` element (they came from the same sub-region
+        scan — e.g. ``helper(&p->u)`` for both, or repeated ``a1[k].x``
+        scans) form a sub-struct at (X, 2W). This resolves the flat
+        model's §2.2 ambiguity when colocation evidence is strong. A
+        local UDT tinfo is built (no global Local Types mutation, no
+        ``apply_type`` on scanned vars) so the bench can scan multiple
+        structs without cross-contamination. Disabled items break the
+        chain; arrays are not packed (their element semantics differ).
+        Iterates until no more pairs qualify.
+        """
+        packed = True
+        while packed:
+            packed = False
+            items = self._items
+            for i in range(len(items) - 1):
+                a = items[i]
+                b = items[i + 1]
+                if not (bool(a.enabled) and bool(b.enabled)):
+                    continue
+                if not (isinstance(a, Member) and isinstance(b, Member)):
+                    continue
+                wa = int(a.size)
+                wb = int(b.size)
+                if wa != wb or wa not in (2, 4, 8):
+                    continue
+                if int(b.offset) != int(a.offset) + wa:
+                    continue
+                if int(getattr(a, "origin", 0)) != int(getattr(b, "origin", 0)):
+                    continue
+                # Only pack when the scanned origin is non-zero (a sub-region
+                # scan like ``helper(&p->u)`` proves the members live inside a
+                # sub-struct). A top-level scan at origin 0 produces members
+                # of the outer struct — packing two dwords into a sub-struct
+                # there would contradict a flat decomposition the scanner has
+                # no evidence against (TRex §2.2 confounding stack shape).
+                if int(getattr(a, "origin", 0)) <= 0:
+                    continue
+                sa = self._scanned_origin_keys(a)
+                sb = self._scanned_origin_keys(b)
+                if not sa or not sb or not (sa & sb):
+                    continue
+                # Restrict packing to plain integer primitives. Pointers,
+                # function pointers, UDTs and strings are independent fields
+                # of the parent struct, not members of a sub-structure — a
+                # funcptr and a pointer-sized slot next to it are siblings,
+                # not a two-field sub-struct (TRex aggregate analysis).
+                try:
+                    if not (
+                        bool(a.tinfo.is_integral())
+                        and not bool(a.tinfo.is_ptr())
+                        and not bool(a.tinfo.is_funcptr())
+                        and bool(b.tinfo.is_integral())
+                        and not bool(b.tinfo.is_ptr())
+                        and not bool(b.tinfo.is_funcptr())
+                    ):
+                        continue
+                except (AttributeError, RuntimeError, TypeError):
+                    continue
+                udt = idaapi.tinfo_t()
+                udt_data = idaapi.udt_type_data_t()
+                base = int(a.offset)
+                ok = True
+                for m in (a, b):
+                    um = m.get_udt_member(offset=base)
+                    if um is None:
+                        ok = False
+                        break
+                    udt_data.push_back(um)
+                if not ok or not udt.create_udt(udt_data, idaapi.BTF_STRUCT):
+                    continue
+                packed_member = Member(offset=base, tinfo=udt)
+                packed_member.scanned_variables = set(a.scanned_variables) | set(b.scanned_variables)
+                packed_member.origin = int(getattr(a, "origin", 0))
+                self.beginResetModel()
+                del items[i : i + 2]
+                keys = [m.offset for m in items]
+                items.insert(bisect.bisect_left(keys, base), packed_member)
+                self._refresh_collisions()
+                self.endResetModel()
+                packed = True
+                break
+
+    @staticmethod
+    def _scanned_origin_keys(member: AbstractMember) -> set[tuple[int, str, int]]:
+        """Equivalence key for a member's ``scanned_variables``.
+
+        ``ScannedObject.__eq__`` hashes by ``(func_ea, name, expression_address)``
+        — two stores of the same lvar at different lines produce distinct
+        instances, so a naive set intersection misses shared origin. We
+        collapse on ``(func_ea, name, origin)`` so members extracted from
+        the same lvar at the same sub-offset (e.g. ``helper_unit(&p->u)``'s
+        ``u->x`` and ``u->y``) compare equal.
+        """
+        keys: set[tuple[int, str, int]] = set()
+        for sv in getattr(member, "scanned_variables", set()):
+            keys.add(
+                (
+                    int(getattr(sv, "func_ea", 0)),
+                    str(getattr(sv, "name", "")),
+                    int(getattr(sv, "origin", 0)),
+                )
+            )
+        return keys
 
     def load_struct(self) -> None:
         """Load members from a named UDT in Local Types into the model."""
