@@ -12,6 +12,12 @@
  *   struct Funcy   { int32_t id; int32_t (*cb)(int32_t); void* ctx; } (0,4)(8,8)(16,8)
  *   struct Shapes  { char tag; int64_t val; };                    (0,1)(8,8)   [gap/padding]
  *
+ * Segment 2 additions:
+ *   struct Shared  { int32_t a; char* name; int64_t v; };   (0,4)(8,8)(16,8) [interproc, deep]
+ *   struct HasUnit { int32_t tag; struct Unit u; };         (0,4)(4,8)       [unit nesting]
+ *   struct Unit    { int32_t x; int32_t y; };               (0,4)(4,4)
+ *   struct List0   { struct List0* next; int32_t data; };   (0,8)(8,4)       [recursion @0]
+ *   union  Mix     { uint32_t u32; uint8_t b[4]; };         (0,4)            [union]
  * Built at -O0 (primary) and -O2 (robustness, mirrors TRex RQ3) with
  * -g0 so Hex-Rays gets no type hints — only symbol names.
  */
@@ -23,6 +29,11 @@ volatile void* g_psink = 0;
 
 struct Simple  { int32_t a; int32_t b; int64_t c; };
 struct Inner   { int32_t x; int32_t y; };
+struct Shared  { int32_t a; char* name; int64_t v; };
+struct Unit    { int32_t x; int32_t y; };
+struct HasUnit { int32_t tag; struct Unit u; };
+struct List0   { struct List0* next; int32_t data; };
+union  Mix     { uint32_t u32; uint8_t b[4]; };
 struct Nested  { int32_t tag; struct Inner in; };
 struct List    { int32_t data; struct List* next; };
 struct WithArr { int32_t prefix; int32_t items[8]; };
@@ -94,6 +105,45 @@ __attribute__((noinline)) int64_t bench_shapes(struct Shapes* p) {
     return p->val;
 }
 
+/* --- Segment 2 --- */
+
+__attribute__((noinline)) void helper_shared(struct Shared* s) {
+    s->a = 1;
+    s->name = "bench";
+    s->v = 2;
+}
+
+__attribute__((noinline)) void bench_interproc(struct Shared* p) {
+    helper_shared(p);
+}
+
+__attribute__((noinline)) void helper_unit(struct Unit* u) {
+    u->x = 1;
+    u->y = 2;
+}
+
+__attribute__((noinline)) void bench_unit(struct HasUnit* p) {
+    p->tag = 1;
+    helper_unit(&p->u);
+}
+
+__attribute__((noinline)) int bench_list0(struct List0* n) {
+    int last = 0;
+    while (n) {
+        last = n->data;
+        n = n->next;
+    }
+    return last;
+}
+
+__attribute__((noinline)) uint32_t bench_mix_wide(union Mix* m) {
+    return m->u32;
+}
+
+__attribute__((noinline)) uint8_t bench_mix_narrow(union Mix* m) {
+    return m->b[1];
+}
+
 static int cb_impl(int32_t x) { return (int)x * 3; }
 
 int main(void) {
@@ -103,10 +153,16 @@ int main(void) {
     struct MultiW m = {0};
     struct Funcy f = {0};
     struct Shapes sh = {0};
+    struct Shared sd = {0, 0, 0};
+    struct HasUnit hu = {0};
+    union Mix mx = {0};
 
     struct List l3 = {30, NULL};
     struct List l2 = {20, &l3};
     struct List l1 = {10, &l2};
+
+    struct List0 l0b = {NULL, 30};
+    struct List0 l0a = {&l0b, 10};
 
     bench_simple(&s);
     bench_nested(&n);
@@ -118,5 +174,11 @@ int main(void) {
     f.cb = cb_impl;
     sink_i(bench_funcy(&f));
     g_psink = (void*)(intptr_t)bench_shapes(&sh);
+    bench_interproc(&sd);
+    bench_unit(&hu);
+    sink_i(bench_list0(&l0a));
+    sink_i((int)bench_mix_wide(&mx));
+    sink_i((int)bench_mix_narrow(&mx));
+    g_psink = (void*)(intptr_t)sd.v;
     return g_sink == 0 && g_psink != 0 ? 0 : 1;
 }

@@ -38,6 +38,24 @@ BENCH: dict[str, dict[str, Any]] = {
     "Shapes": {"funcs": ["bench_shapes"], "fields": [[0, 1], [8, 8]]},
 }
 
+# Segment 2 additions. "visitor": "deep" scans with NewDeepSearchVisitor
+# (recurses into callees) — the interprocedural workflow.
+BENCH.update(
+    {
+        "Shared": {
+            "funcs": ["bench_interproc"],
+            "fields": [[0, 4], [8, 8], [16, 8]],
+            "visitor": "deep",
+        },
+        "HasUnit": {
+            "funcs": ["bench_unit"],
+            "fields": [[0, 4], [4, 8]],
+            "visitor": "deep",
+        },
+        "List0": {"funcs": ["bench_list0"], "fields": [[0, 8], [8, 4]]},
+        "Mix": {"funcs": ["bench_mix_wide", "bench_mix_narrow"], "fields": [[0, 4]]},
+    }
+)
 
 def _resolve(name: str) -> int:
     ea = int(idc.get_name_ea_simple(name))
@@ -81,7 +99,10 @@ def _prepare_scan(fn: str) -> tuple[Any, int, Any]:
 def run() -> list[dict[str, Any]]:
     from hexrays_pytools.domain.recon.structure_model import StructureModel
     from hexrays_pytools.domain.recon.workspace import ReconWorkspace
-    from hexrays_pytools.domain.scanner.member_extractor import NewShallowSearchVisitor
+    from hexrays_pytools.domain.scanner.member_extractor import (
+        NewDeepSearchVisitor,
+        NewShallowSearchVisitor,
+    )
     from hexrays_pytools.domain.scanner.scanned_object import VariableObject
     from hexrays_pytools.domain.session import Session
 
@@ -102,27 +123,15 @@ def run() -> list[dict[str, Any]]:
                 try:
                     cfunc, idx, lv = _prepare_scan(fn)
                     obj = VariableObject(lv, idx)
-                    visitor = NewShallowSearchVisitor(
-                        cfunc, 0, obj, workspace, consts=session.consts
+                    visitor_cls = (
+                        NewDeepSearchVisitor
+                        if spec.get("visitor") == "deep"
+                        else NewShallowSearchVisitor
                     )
+                    visitor = visitor_cls(cfunc, 0, obj, workspace, consts=session.consts)
                     visitor.process()
                 except Exception:
                     entry["errors"].append({"func": fn, "error": traceback.format_exc()})
-            try:
-                workspace.model.resolve_types()
-            except Exception:
-                entry["errors"].append({"func": "<resolve_types>", "error": traceback.format_exc()})
-            for m in workspace.model.items:
-                entry["members"].append(
-                    {
-                        "offset": int(m.offset),
-                        "size": int(m.size),
-                        "type_name": str(m.type_name),
-                        "enabled": bool(m.enabled),
-                        "is_array": bool(m.is_array),
-                        "score": int(m.score),
-                    }
-                )
             results.append(entry)
     finally:
         with contextlib.suppress(Exception):
