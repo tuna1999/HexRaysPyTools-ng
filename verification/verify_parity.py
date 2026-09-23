@@ -180,24 +180,23 @@ def t_udt_layout_bits() -> str:
 
 
 def t_score() -> str:
+    """TRex-informed scoring contract: named types and IDA primitives rank
+    by size (underscores NOT penalized for primitives — they are width-true
+    behavior captures); unknown underscore types stay penalized (unit test
+    test_score_underscore_unknown_type_penalized covers that branch with a
+    mocked non-integral tinfo, which real parse_decl cannot produce)."""
     from hexrays_pytools.domain.recon.member import AbstractMember
 
     int_ti = _parse("int x;")
     m = AbstractMember(offset=0, tinfo=int_ti, name="int")
     s_known = m.score
-    assert s_known != 0xFFFF, f"known type scored worst: {s_known}"
+    assert s_known == 2, f"int (4 bytes) should score 2, got {s_known}"
 
-    unk_ti = _parse("int y;")
-    m2 = AbstractMember(offset=0, tinfo=unk_ti, name="_UnknownBlob *")
-    # force the unknown path
-    m2.tinfo.dstr = lambda: "_UnknownBlob *"  # type: ignore[attr-defined]
-    s_unk = m2.score
-    # TRex-informed ranking (trex_bench session): underscore types rank BELOW
-    # named types (score_member's -0x1000 penalty), not on the 0xFFFF
-    # fallback — 0xFFFF previously inverted resolve_types (higher wins).
-    assert s_unk < 0, f"underscore type should score below named types, got {s_unk}"
-    assert s_unk < s_known, "underscore type must not beat a named type"
-    return f"known={s_known} unknown={s_unk}"
+    qword_ti = _parse("_QWORD x;")
+    m2 = AbstractMember(offset=0, tinfo=qword_ti, name="_QWORD")
+    s_qword = m2.score
+    assert s_qword == 3, f"_QWORD (8 bytes, primitive-exempt) should score 3, got {s_qword}"
+    return f"known={s_known} qword={s_qword}"
 
 
 def t_pack() -> str:
