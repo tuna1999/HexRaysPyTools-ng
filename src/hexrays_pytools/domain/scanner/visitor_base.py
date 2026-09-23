@@ -567,8 +567,50 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
                 idx,
             )
 
+    def _maybe_follow_thunk(self) -> None:
+        """Follow an argumentless tail-call thunk: ``return callee();``.
+
+        Compilers (gcc -O2 tail calls) turn wrappers into thunks whose ctree
+        shows no argument use at all — the object is forwarded in a register,
+        so a scan of the thunk finds nothing. When the sole statement is a
+        zero-argument tail call, the seed argument register reaches the
+        callee unchanged (ABI passthrough — exactly what a reverse engineer
+        follows manually), so queue the callee's matching argument.
+        """
+        if self._visited or not self._is_func_crippled():
+            return
+        stmt = self._cfunc.body.cblock.at(0)
+        call = None
+        try:
+            if int(stmt.op) == int(idaapi.cit_return):
+                call = stmt.creturn.expr
+            elif int(stmt.op) == int(idaapi.cit_expr):
+                call = stmt.cexpr
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return
+        if call is None or int(call.op) != int(idaapi.cot_call):
+            return
+        try:
+            if int(call.a.size()) != 0:
+                return  # visible argument — the normal _check_call path owns it
+            func_ea = int(call.x.obj_ea)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return
+        if func_ea == int(idaapi.BADADDR) or is_imported_ea(func_ea, self._imported_ea):
+            return
+        arg_idx = int(getattr(self._objects[0], "index", 0)) if self._objects else 0
+        if self._add_visit(func_ea, arg_idx):
+            logger.debug(
+                "[HexRaysPyTools][Deep Scan Thunk] caller=0x%X -> callee=0x%X arg=%d",
+                int(self._cfunc.entry_ea),
+                func_ea,
+                arg_idx,
+            )
+            self._add_scan_tree_info(func_ea, arg_idx)
+
     def _recursive_process(self) -> None:
         """Walk this function, then drain the callee queue recursively."""
+        self._maybe_follow_thunk()
         super()._recursive_process()
         while self._new_for_visit:
             func_ea, arg_idx = self._new_for_visit.pop()
