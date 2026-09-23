@@ -32,6 +32,7 @@ from ...domain.types.func_type import get_call_argument_info
 from ...domain.types.tinfo_utils import is_legal_type
 from ...infra.arch.arch import (
     get_funcs_calling_address,
+    get_insn_mem_size,
     is_code_ea,
     to_hex,
 )
@@ -434,25 +435,28 @@ class SearchVisitor(ObjectDownwardsVisitor):
             deref_tinfo = parents[0].type
             if not is_legal_type(deref_tinfo):
                 deref_tinfo = self._deref_tinfo(default_tinfo)
+            deref_tinfo = self._asm_narrowed_tinfo(deref_tinfo, parents[0])
             if len(parents_type) >= 2 and parents_type[1] == "cast":
-                # A value cast after the load may only widen the observed
-                # width — a truncating cast is a post-load operation and
-                # must not shrink the member (TRex COPY_SIZES union).
-                default_tinfo = self._wider_tinfo(deref_tinfo, parents[1].type)
                 cexpr = parents[0]
                 del parents_type[0]
                 del parents[0]
-            else:
-                default_tinfo = deref_tinfo
+            # A value cast after the load is a post-load operation — it never
+            # changes the observed memory-access width (TRex COPY_SIZES come
+            # from the deref expression, not from value contexts).
+            default_tinfo = deref_tinfo
 
             if len(parents_type) >= 2 and parents_type[1] == "asg":
                 if parents[1].x == parents[0]:
-                    # *(TYPE *)(var + x) = ???
+                    # *(TYPE *)(var + x) = ??? — the STORE's memory width is
+                    # the deref type; the value may still contribute richer
+                    # structure (funcptr / vtable) at the same or wider width.
                     obj_ea = self._extract_obj_ea(parents[1].y)
                     asg_tinfo = self._wider_tinfo(default_tinfo, parents[1].y.type)
                     return self._get_member(int(offset), cexpr, obj, asg_tinfo, obj_ea)
-                asg_tinfo = self._wider_tinfo(default_tinfo, parents[1].x.type)
-                return self._get_member(int(offset), cexpr, obj, asg_tinfo)
+                # lhs = *(TYPE *)(var + x) — a READ into a local: the local's
+                # type is a value context, not memory evidence; the deref
+                # (asm-narrowed) type is the whole observation.
+                return self._get_member(int(offset), cexpr, obj, default_tinfo)
             if len(parents_type) >= 2 and parents_type[1] == "call":
                 if parents[1].x == parents[0]:
                     # ((type (__some_call *)(..., ..., ...))(var[idx]))(...)
@@ -509,6 +513,47 @@ class SearchVisitor(ObjectDownwardsVisitor):
         except (AttributeError, RuntimeError, TypeError, ValueError):
             return refine
         return base if base_size > refine_size else refine
+
+    def _asm_narrowed_tinfo(self, tinfo: Any, deref_expr: Any) -> Any:
+        """Narrow a deref-derived tinfo to the machine instruction's width.
+
+        TRex §3.3.1: disassembly observes the actual copy width; Hex-Rays
+        can re-type it (``mov eax, [rcx]`` is a 4-byte copy even when the
+        ctree deref feeds a 64-bit expression). Only narrows integral
+        types — pointers, floats and UDTs are kept as the ctree derived
+        them, and any decode failure keeps the ctree width.
+        """
+        try:
+            if tinfo is None or not bool(tinfo.is_integral()):
+                return tinfo
+            ea = int(deref_expr.ea)
+            if ea == int(idaapi.BADADDR):
+                ea = int(find_asm_address(deref_expr, self.parents))
+            mem_size = get_insn_mem_size(ea)
+            if mem_size is None:
+                return tinfo
+            size = int(tinfo.get_size())
+            if size <= mem_size or mem_size not in (1, 2, 4, 8, 16):
+                return tinfo
+            btf_name = {1: "BTF_BYTE", 2: "BTF_WORD", 4: "BTF_DWORD", 8: "BTF_QWORD"}.get(
+                mem_size
+            )
+            btf = getattr(idaapi, btf_name, None) if btf_name is not None else None
+            if not isinstance(btf, int):
+                return tinfo
+            narrowed = idaapi.tinfo_t(int(btf))
+            if int(narrowed.get_size()) == mem_size:
+                logger.debug(
+                    "  asm-narrowed deref %s -> %s (%d-byte access at %s)",
+                    str(tinfo),
+                    str(narrowed.dstr()),
+                    mem_size,
+                    to_hex(ea),
+                )
+                return narrowed
+            return tinfo
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return tinfo
 
     @staticmethod
     def _extract_obj_ea(cexpr: Any) -> int | None:

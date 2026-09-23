@@ -35,6 +35,72 @@ def get_ptr(ea: int) -> int:
         ptr &= ~1
     return ptr
 
+_DT_SIZE_NAMES: dict[str, int] = {
+    "dt_byte": 1,
+    "dt_word": 2,
+    "dt_dword": 4,
+    "dt_float": 4,
+    "dt_qword": 8,
+    "dt_double": 8,
+    "dt_fword": 6,
+    "dt_tbyte": 10,
+    "dt_packreal": 10,
+    "dt_byte16": 16,
+}
+_DT_SIZES_CACHE: dict[int, int] | None = None
+
+
+def dtype_to_size(dtype: int, dt_constants: dict[int, int]) -> int | None:
+    """Map an ``op_t.dtype`` to its size in bytes using pre-resolved constants.
+
+    Pure helper (testable without IDA): ``dt_constants`` maps the numeric
+    ``dt_*`` constant values to sizes.
+    """
+    return dt_constants.get(int(dtype))
+
+
+def _resolve_dt_sizes() -> dict[int, int]:
+    global _DT_SIZES_CACHE
+    if _DT_SIZES_CACHE is None:
+        resolved: dict[int, int] = {}
+        for name, size in _DT_SIZE_NAMES.items():
+            value = getattr(idaapi, name, None)
+            if isinstance(value, int):
+                resolved[value] = size
+        _DT_SIZES_CACHE = resolved
+    return _DT_SIZES_CACHE
+
+
+def get_insn_mem_size(ea: int) -> int | None:
+    """Memory-access size (bytes) of the instruction at ``ea``.
+
+    TRex §3.3.1: the disassembly observes the *actual* copy width — the
+    decompiler can re-type it (e.g. ``mov eax, [rcx]`` is a 4-byte copy
+    even when Hex-Rays renders the deref as ``__int64``). Returns None when
+    the address is invalid, decoding fails, or memory operands disagree
+    (callers must treat None as "no evidence" and keep the ctree width).
+    Only used to NARROW decompiler-inferred widths, never to widen.
+    """
+    import ida_ua  # type: ignore[import-not-found]  # noqa: PLC0415
+
+    addr = int(ea)
+    if addr == int(idaapi.BADADDR):
+        return None
+    insn = ida_ua.insn_t()
+    if int(ida_ua.decode_insn(insn, addr)) <= 0:
+        return None
+    mem_types = {int(getattr(idaapi, n)) for n in ("o_displ", "o_phrase", "o_mem")}
+    sizes: set[int] = set()
+    for i in range(8):  # UA_MAXOP
+        op = insn.ops[i]
+        if int(op.type) in mem_types:
+            size = dtype_to_size(int(op.dtype), _resolve_dt_sizes())
+            if size is not None:
+                sizes.add(size)
+    if len(sizes) == 1:
+        return sizes.pop()
+    return None
+
 
 def get_funcs_calling_address(ea: int) -> set[int]:
     """Return all function-start addresses that call the function at `ea`.
