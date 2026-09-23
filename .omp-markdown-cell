@@ -1,0 +1,38 @@
+Đã làm xong đến mức cuối cùng. Tổng kết session:
+
+## Đã hoàn thành (14 commits, fb4ae45 → 823cb49)
+
+| Metric | Baseline | Cuối session | Δ |
+|---|---|---|---|
+| **O0 recon_score** | 0.6875 | **0.9375** | **+36.4%** |
+| **O2 recon_score** | 0.6562 | **0.8333** | **+26.9%** |
+| structs_full (O0/O2) | 2 / 1 | **5 / 4** | +150% / +300% |
+| member_precision (O0) | 0.875 | **0.96** | +9.7% |
+| member_precision (O2) | - | **0.88** | mới đo |
+
+## Trạng thái codebase
+- ✅ **608 tests pass** (coverage 80.88%, gate ≥ 80%)
+- ✅ `mypy --strict` clean trên toàn bộ `src/hexrays_pytools/`
+- ✅ `ruff check` clean
+- ✅ Benchmark deterministic qua nhiều lần chạy (`md5sum` cùng hash)
+- ✅ Project ở **TRex-parity ceiling trên fixture hiện tại**
+
+## Tại sao dừng
+Mọi gap còn lại đều **paper-impossibility bounds** — TRex itself không thể recover chúng:
+
+| Gap | Điểm còn | Lý do (paper) |
+|---|---|---|
+| Nested (4,8) flat vs nested | 0.5 O0 | §2.2 confounding stack shape |
+| HasUnit (4,8) không pack | 0.5 O0 | Auto-pack guard đúng (origin=0 = top-level); strict scorer không credit nested UDT |
+| WithArr (4,32) | 0.5 O0/O2 | §3.3.4 array count unknowable statically |
+| O2 Simple/Nested `(0,8)` merged | 1.0 O2 | gcc merge 2×4B → 8B `mov [rcx], rax` — asm cũng chỉ thấy int64 (§2.2 confounding ops) |
+
+**Đã thử tất cả hướng remaining** trong segments 2 & 3, kể cả sub-region scan extension (reverted vì 3 blockers độc lập: over-match, element/byte confusion, strict scorer không credit nested UDT). Mỗi hướng đều dẫn đến ceiling đã verify bằng ablation.
+
+## Để tiếp tục research có ý nghĩa thực sự
+Cần `init_experiment new_segment=true` với **một trong**:
+1. **Fixture mới** tránh gaps bất khả (Nested nesting explicit in GT, WithArr static count, compiler không merge stores)
+2. **Nested-aware scorer** (secondary metric mới, TRex-faithful) — không gaming, mà mở rộng measurement dimension
+3. **TRex technique khác** chưa bench: GVN-equality-merging, φ-node propagation, return-value struct extraction
+
+**Nếu không**, dự án đã đạt mục tiêu nghiên cứu paper: 10 kỹ thuật TRex ported, 2 v2-port bugs tìm thấy và fix (MRO shadowing, score inversion), fixture đạt paper-impossibility ceiling. Tôi sẽ không tiếp tục chạy iterations trên fixture này — đó là noise, không phải research.

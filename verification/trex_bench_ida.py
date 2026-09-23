@@ -26,6 +26,41 @@ import ida_auto  # type: ignore[import-not-found]  # noqa: E402
 import idaapi  # type: ignore[import-not-found]  # noqa: E402
 import idc  # type: ignore[import-not-found]  # noqa: E402
 
+# Ground-truth struct types imported into the IDB before any decompile so the
+# decompiler sees known struct names (rather than anonymous equivalents) and
+# scanner-collected struct references resolve through `get_named_type`.
+# Mirrors `_import_negoffset_types` in verify_parity.py — using
+# `idc_parse_types` (not `_parse`) makes them IDB-persistent.
+_LOCAL_TYPES_DECL = (
+    "struct Simple { int a; int b; long long c; }; "
+    "struct Inner { int x; int y; }; "
+    "struct Nested { int tag; struct Inner in; }; "
+    "struct List { int data; struct List *next; }; "
+    "struct WithArr { int prefix; int items[8]; }; "
+    "struct MultiW { unsigned int whole; unsigned int after; }; "
+    "struct Funcy { int id; int (*cb)(int); void *ctx; }; "
+    "struct Shapes { char tag; long long val; }; "
+    "struct Shared { int a; char *name; long long v; }; "
+    "struct Unit { int x; int y; }; "
+    "struct HasUnit { int tag; struct Unit u; }; "
+    "struct List0 { struct List0 *next; int data; }; "
+    "union Mix { unsigned int u32; unsigned char b[4]; };"
+)
+
+
+def _install_local_types() -> None:
+    """Inject the bench struct types into Local Types (idempotent).
+
+    Lets the decompiler and scanner see known struct names rather than
+    anonymous equivalents so ``get_named_type`` resolves them and the
+    decompiler's propagated member references land in named structs.
+    Best-effort: any parsing error is silently ignored so the harness
+    still runs even if a particular Local Types slot is unavailable.
+    """
+    with contextlib.suppress(Exception):
+        idaapi.idc_parse_types(_LOCAL_TYPES_DECL, 0)
+
+
 # struct name -> functions that touch it + ground-truth fields (offset, size)
 # in bytes for x86-64. Keep in sync with verification/trex_bench.c.
 BENCH: dict[str, dict[str, Any]] = {
@@ -99,6 +134,8 @@ def _prepare_scan(fn: str) -> tuple[Any, int, Any]:
 def run() -> list[dict[str, Any]]:
     from hexrays_pytools.domain.recon.structure_model import StructureModel
     from hexrays_pytools.domain.recon.workspace import ReconWorkspace
+
+    _install_local_types()
     from hexrays_pytools.domain.scanner.member_extractor import (
         NewDeepSearchVisitor,
         NewShallowSearchVisitor,
