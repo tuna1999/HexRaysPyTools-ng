@@ -253,9 +253,23 @@ class AbstractMember:
             try:
                 from ...pure.scoring import score_member  # noqa: PLC0415
 
-                return int(score_member(name, type_size))
+                score = int(score_member(name, type_size))
             except (ImportError, AttributeError, TypeError, KeyError, ValueError):
-                pass
+                return 0xFFFF
+            if score < 0 and name.startswith("_"):
+                # IDA primitives (`_DWORD`, `_QWORD`, …) are width-true
+                # behavior captures, not auto-generated names — the '_' name
+                # penalty must not rank them below sub-width named evidence
+                # (e.g. a `char` write inside a dword load, TRex would union
+                # them). Only unknown underscore TYPES stay penalized.
+                try:
+                    if self.tinfo is not None and bool(
+                        self.tinfo.is_integral() or self.tinfo.is_floating()
+                    ):
+                        score += 0x1000
+                except (AttributeError, RuntimeError):
+                    pass
+            return score
         return 0xFFFF
 
     def type_equals_to(self, tinfo: Any) -> bool:

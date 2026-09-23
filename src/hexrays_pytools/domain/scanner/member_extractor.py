@@ -173,6 +173,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         obj: Any,
         tinfo: Any = None,
         obj_ea: Any = None,
+        is_array: bool = False,
     ) -> Any:
         """Build the right ``Member``/``VoidMember``/``DiscoveredVTable`` for the offset.
 
@@ -261,6 +262,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
             tinfo=tinfo,
             origin=self._origin,
             scanned_variables={scan_obj},
+            is_array=is_array,
         )
 
     def _parse_call(
@@ -308,9 +310,10 @@ class SearchVisitor(ObjectDownwardsVisitor):
         if len(parents_type) >= 1 and parents_type[0] in ("idx", "add"):
             # `obj[idx]` or `(TYPE *) + x`
             if int(parents[0].y.op) != int(idaapi.cot_num):
-                # Dynamic offset — can't reason about it.
-                logger.debug("  ptr: skip '%s' (dynamic %s offset)", str(obj.name), parents_type[0])
-                return None
+                # Dynamic offset — array evidence (TRex colocation §3.3.3):
+                # a symbolic index over a base pointer means the base points
+                # at a run of elements, not a scalar field.
+                return self._extract_array_member(cexpr, obj, parents[0], parents_type[0])
             offset = int(parents[0].y.numval()) * int(cexpr.type.get_ptrarr_objsize())
             cexpr = self.parent_expr()
             if parents_type[0] == "add":
@@ -333,6 +336,52 @@ class SearchVisitor(ObjectDownwardsVisitor):
             offset = 0
 
         return self._extract_member(cexpr, obj, offset, parents, parents_type)
+
+    def _extract_array_member(self, cexpr: Any, obj: Any, node: Any, kind: str) -> Any:
+        """Dynamic-index access → array member evidence (TRex colocation §3.3.3).
+
+        ``base[i]`` / ``base + i`` with symbolic ``i``: the element type is the
+        deref expression's own type; the array start offset is the constant
+        term of the index expression (``base[i + 3]`` → offset ``3 * elemsize``),
+        or 0 for a bare symbolic index. Element count is unknowable statically
+        (TRex models these as flexible array members).
+        """
+        try:
+            elem_size = int(cexpr.type.get_ptrarr_objsize())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            logger.debug("  array: skip '%s' (no element size)", str(obj.name))
+            return None
+
+        const_term = 0
+        if kind == "idx":
+            elem_tinfo = node.type if is_legal_type(node.type) else None
+            index_expr = node.y
+            if int(index_expr.op) in (int(idaapi.cot_add), int(idaapi.cot_sub)):
+                negate = int(index_expr.op) == int(idaapi.cot_sub)
+                left, right = index_expr.x, index_expr.y
+                if int(left.op) == int(idaapi.cot_num):
+                    const_term = int(left.numval())
+                elif int(right.op) == int(idaapi.cot_num):
+                    const_term = -int(right.numval()) if negate else int(right.numval())
+        else:  # "add" — pointer arithmetic with a symbolic offset
+            elem_tinfo = self._deref_tinfo(cexpr.type)
+        if elem_tinfo is None:
+            elem_tinfo = self._deref_tinfo(cexpr.type)
+        if elem_tinfo is None:
+            logger.debug("  array: skip '%s' (no element type)", str(obj.name))
+            return None
+
+        offset = const_term * elem_size
+        if offset < 0:
+            logger.debug("  array: skip '%s' (negative offset %d)", str(obj.name), offset)
+            return None
+        logger.debug(
+            "  array: '%s' dynamic index -> element %s at offset %d",
+            str(obj.name),
+            str(elem_tinfo),
+            offset,
+        )
+        return self._get_member(offset, cexpr, obj, elem_tinfo, is_array=True)
 
     def _extract_member_from_xword(
         self,
@@ -420,9 +469,19 @@ class SearchVisitor(ObjectDownwardsVisitor):
             return self._get_member(int(offset), cexpr, obj, tinfo)
 
         if len(parents_type) >= 1 and parents_type[0] == "asg" and parents[0].y == cexpr:
-            # other_obj = (TYPE) (var + offset)
+            # other_obj = (TYPE) (var + offset) — pointer-arithmetic assignment
+            # is real field-offset evidence; keep the pointer-width member.
             self._parse_left_assignee(parents[1].x, int(offset))
-        return self._get_member(int(offset), cexpr, obj, self._deref_tinfo(default_tinfo))
+            return self._get_member(int(offset), cexpr, obj, self._deref_tinfo(default_tinfo))
+        if int(cexpr.op) in (int(idaapi.cot_idx), int(idaapi.cot_ptr)) and is_legal_type(cexpr.type):
+            # cexpr is itself a deref/index expression consumed by the caller
+            # (e.g. `a1[0]` feeding arithmetic) — its own type is the observed
+            # copy width, stronger than the pointer-sized PX_WORD guess.
+            return self._get_member(int(offset), cexpr, obj, cexpr.type)
+        # Pure value use of the scanned object (comparisons, arithmetic on the
+        # pointer itself) carries no member evidence — TRex records it as an
+        # operation on the pointer's type, not as a field observation.
+        return None
 
     @staticmethod
     def _wider_tinfo(base: Any, refine: Any) -> Any:
