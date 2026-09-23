@@ -132,6 +132,23 @@ def run() -> list[dict[str, Any]]:
                     visitor.process()
                 except Exception:
                     entry["errors"].append({"func": fn, "error": traceback.format_exc()})
+            try:
+                workspace.model.resolve_types()
+            except Exception:
+                entry["errors"].append(
+                    {"func": "<resolve_types>", "error": traceback.format_exc()}
+                )
+            for m in workspace.model.items:
+                entry["members"].append(
+                    {
+                        "offset": int(m.offset),
+                        "size": int(m.size),
+                        "type_name": str(m.type_name),
+                        "enabled": bool(m.enabled),
+                        "is_array": bool(m.is_array),
+                        "score": int(m.score),
+                    }
+                )
             results.append(entry)
     finally:
         with contextlib.suppress(Exception):
