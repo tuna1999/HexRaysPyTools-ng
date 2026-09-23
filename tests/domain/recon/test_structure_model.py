@@ -432,6 +432,92 @@ def test_resolve_types_subsumes_static_elements_into_array() -> None:
     assert bystander.enabled is True, "different-width member is not an element"
 
 
+def test_resolve_types_packs_sub_struct_only_with_sub_region_origin() -> None:
+    """Pack contiguous integer primitives into a sub-struct only on a sub-region scan.
+
+    TRex §3.3.4 aggregate analysis: ``helper(&p->u)`` produces members at
+    sub-offsets 0, 4 inside the ``u`` sub-region (origin 4) — they pack
+    into the inner struct. A top-level scan at origin 0 produces flat
+    outer-struct members that must NOT be re-packed (would contradict a
+    flat decomposition the scanner has no evidence against — §2.2).
+    """
+    int_t = MagicMock()
+    int_t.get_size.return_value = 4
+    int_t.is_integral.return_value = True
+    int_t.is_ptr.return_value = False
+    int_t.is_funcptr.return_value = False
+
+    sv_sub = MagicMock()
+    sv_sub.func_ea = 0x401500
+    sv_sub.name = "p"
+    sv_sub.origin = 4
+
+    a = Member(offset=0, tinfo=int_t, name="u_x", origin=4)
+    b = Member(offset=4, tinfo=int_t, name="u_y", origin=4)
+    a.scanned_variables = {sv_sub}
+    b.scanned_variables = {sv_sub}
+    model = StructureModel(items=[a, b])
+    model.resolve_types()
+    assert len(model.items) == 1, "sub-region pair should pack into one member"
+    packed = model.items[0]
+    assert int(packed.offset) == 4, "packed member lands at the sub-region's absolute offset"
+
+    # Reset and rebuild without packing (origin 0: no sub-region signal).
+    int_t2 = MagicMock()
+    int_t2.get_size.return_value = 4
+    int_t2.is_integral.return_value = True
+    int_t2.is_ptr.return_value = False
+    int_t2.is_funcptr.return_value = False
+    sv_top = MagicMock()
+    sv_top.func_ea = 0x401500
+    sv_top.name = "p"
+    sv_top.origin = 0
+    a2 = Member(offset=0, tinfo=int_t2, name="a", origin=0)
+    b2 = Member(offset=4, tinfo=int_t2, name="b", origin=0)
+    a2.scanned_variables = {sv_top}
+    b2.scanned_variables = {sv_top}
+    model2 = StructureModel(items=[a2, b2])
+    model2.resolve_types()
+    assert sorted([m.offset for m in model2.items]) == [0, 4], (
+        "origin=0 top-level scan must not pack — flat decomposition stays"
+    )
+
+
+def test_resolve_types_does_not_pack_pointer_or_funcptr_pairs() -> None:
+    """A pointer and a funcptr next to it are siblings, not a sub-struct.
+
+    The naïve pack guard lets the scanner merge any same-width adjacent
+    members with shared scanned origin — that mis-packs a callback-table
+    pointer next to a code pointer into a "sub-struct". Restrict packing
+    to plain integer primitives (no ptr, no funcptr).
+    """
+    func_t = MagicMock()
+    func_t.get_size.return_value = 8
+    func_t.is_integral.return_value = False
+    func_t.is_ptr.return_value = False
+    func_t.is_funcptr.return_value = True
+
+    data_t = MagicMock()
+    data_t.get_size.return_value = 8
+    data_t.is_integral.return_value = False
+    data_t.is_ptr.return_value = True
+    data_t.is_funcptr.return_value = False
+
+    sv = MagicMock()
+    sv.func_ea = 0x401500
+    sv.name = "p"
+    sv.origin = 4
+
+    cb = Member(offset=0, tinfo=func_t, name="cb", origin=4)
+    ctx = Member(offset=8, tinfo=data_t, name="ctx", origin=4)
+    cb.scanned_variables = {sv}
+    ctx.scanned_variables = {sv}
+    model = StructureModel(items=[cb, ctx])
+    model.resolve_types()
+    assert sorted([m.offset for m in model.items]) == [4, 12]
+
+
+
 def test_load_struct_uses_named_tinfo_and_skips_padding(monkeypatch) -> None:
     idaapi = __import__("idaapi")
     tif = MagicMock()
