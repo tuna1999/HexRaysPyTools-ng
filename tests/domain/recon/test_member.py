@@ -246,19 +246,36 @@ def test_score_funcptr_gets_mid_value() -> None:
     assert 0x1000 <= s < 0xFFFF
 
 
-def test_score_unknown_name_worst_case() -> None:
-    """A type name missing from the scoring table falls back to 0xFFFF.
+def test_score_underscore_type_ranks_below_named() -> None:
+    """Underscore types (width known, semantics unknown) rank below named.
 
-    Mirrors v1: ``score_table(type_name)`` raises KeyError → funcptr check →
-    0xFFFF. A leading-underscore name skips the table lookup entirely and
-    also lands on the funcptr/0xFFFF path.
+    Contract (TRex-informed, trex_bench session): ``score_member`` is
+    consulted for every name; its ``-0x1000`` underscore penalty puts
+    ``_QWORD``/``_UnknownBlob *`` below any named evidence. Previously they
+    hit the 0xFFFF fallback which RESOLVE_TYPES treats as the best score —
+    manufactured ``_QWORD`` candidates beat real typed members.
     """
     tinfo = MagicMock()
     tinfo.dstr.return_value = "_SomeUnknownStruct *"
     tinfo.is_funcptr.return_value = False
     tinfo.get_size.return_value = 4
     m = AbstractMember(offset=0, tinfo=tinfo, name="_SomeUnknownStruct *")
-    assert m.score == 0xFFFF
+    assert m.score < 0
+
+
+def test_score_named_beats_underscore_same_offset() -> None:
+    """Regression (trex_bench): int evidence must win over _QWORD evidence."""
+    named = MagicMock()
+    named.dstr.return_value = "int"
+    named.get_size.return_value = 4
+    named.is_funcptr.return_value = False
+    underscore = MagicMock()
+    underscore.dstr.return_value = "_QWORD"
+    underscore.get_size.return_value = 8
+    underscore.is_funcptr.return_value = False
+    m_named = AbstractMember(offset=0, tinfo=named)
+    m_underscore = AbstractMember(offset=0, tinfo=underscore)
+    assert m_named.score > m_underscore.score
 
 
 def test_type_equals_to() -> None:

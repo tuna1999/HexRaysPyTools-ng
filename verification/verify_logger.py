@@ -15,7 +15,6 @@ _RESULTS = Path(__file__).resolve().parent / "logs" / "logger_verify.json"
 
 def main() -> None:
     import idaapi  # type: ignore[import-not-found]
-    import ida_hexrays  # type: ignore[import-not-found]
 
     res: dict = {}
 

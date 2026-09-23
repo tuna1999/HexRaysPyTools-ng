@@ -192,7 +192,11 @@ def t_score() -> str:
     # force the unknown path
     m2.tinfo.dstr = lambda: "_UnknownBlob *"  # type: ignore[attr-defined]
     s_unk = m2.score
-    assert s_unk == 0xFFFF, f"unknown name should score 0xFFFF, got {s_unk}"
+    # TRex-informed ranking (trex_bench session): underscore types rank BELOW
+    # named types (score_member's -0x1000 penalty), not on the 0xFFFF
+    # fallback — 0xFFFF previously inverted resolve_types (higher wins).
+    assert s_unk < 0, f"underscore type should score below named types, got {s_unk}"
+    assert s_unk < s_known, "underscore type must not beat a named type"
     return f"known={s_known} unknown={s_unk}"
 
 

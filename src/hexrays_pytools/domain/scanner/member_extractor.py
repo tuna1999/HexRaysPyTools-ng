@@ -379,20 +379,31 @@ class SearchVisitor(ObjectDownwardsVisitor):
             default_tinfo = self._px_word_tinfo
 
         if len(parents_type) >= 1 and parents_type[0] in ("idx", "ptr"):
+            # TRex-style behavior capture: the deref/index expression's own
+            # type is the observed copy width (`a1[2]` on `_DWORD *` observes
+            # a 4-byte copy) — richer than the pointer-sized PX_WORD guess.
+            deref_tinfo = parents[0].type
+            if not is_legal_type(deref_tinfo):
+                deref_tinfo = self._deref_tinfo(default_tinfo)
             if len(parents_type) >= 2 and parents_type[1] == "cast":
-                default_tinfo = parents[1].type
+                # A value cast after the load may only widen the observed
+                # width — a truncating cast is a post-load operation and
+                # must not shrink the member (TRex COPY_SIZES union).
+                default_tinfo = self._wider_tinfo(deref_tinfo, parents[1].type)
                 cexpr = parents[0]
                 del parents_type[0]
                 del parents[0]
             else:
-                default_tinfo = self._deref_tinfo(default_tinfo)
+                default_tinfo = deref_tinfo
 
             if len(parents_type) >= 2 and parents_type[1] == "asg":
                 if parents[1].x == parents[0]:
                     # *(TYPE *)(var + x) = ???
                     obj_ea = self._extract_obj_ea(parents[1].y)
-                    return self._get_member(int(offset), cexpr, obj, parents[1].y.type, obj_ea)
-                return self._get_member(int(offset), cexpr, obj, parents[1].x.type)
+                    asg_tinfo = self._wider_tinfo(default_tinfo, parents[1].y.type)
+                    return self._get_member(int(offset), cexpr, obj, asg_tinfo, obj_ea)
+                asg_tinfo = self._wider_tinfo(default_tinfo, parents[1].x.type)
+                return self._get_member(int(offset), cexpr, obj, asg_tinfo)
             if len(parents_type) >= 2 and parents_type[1] == "call":
                 if parents[1].x == parents[0]:
                     # ((type (__some_call *)(..., ..., ...))(var[idx]))(...)
@@ -400,7 +411,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
                 _idx, tinfo = get_call_argument_info(parents[1], parents[0])
                 if tinfo is None:
                     tinfo = self._pchar_tinfo
-                return self._get_member(int(offset), cexpr, obj, tinfo)
+                return self._get_member(int(offset), cexpr, obj, self._wider_tinfo(default_tinfo, tinfo))
             return self._get_member(int(offset), cexpr, obj, default_tinfo)
 
         if len(parents_type) >= 1 and parents_type[0] == "call":
@@ -412,6 +423,27 @@ class SearchVisitor(ObjectDownwardsVisitor):
             # other_obj = (TYPE) (var + offset)
             self._parse_left_assignee(parents[1].x, int(offset))
         return self._get_member(int(offset), cexpr, obj, self._deref_tinfo(default_tinfo))
+
+    @staticmethod
+    def _wider_tinfo(base: Any, refine: Any) -> Any:
+        """Return the wider of two tinfos.
+
+        TRex COPY_SIZES union: when a load/store of width ``base`` feeds a
+        narrower value context ``refine`` (truncating cast, assignment,
+        call argument), the member must keep the observed access width —
+        the narrowing op happened after the memory access. Ties and any API
+        error prefer ``refine`` (the more specific context).
+        """
+        if base is None:
+            return refine
+        if refine is None:
+            return base
+        try:
+            base_size = int(base.get_size())
+            refine_size = int(refine.get_size())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return refine
+        return base if base_size > refine_size else refine
 
     @staticmethod
     def _extract_obj_ea(cexpr: Any) -> int | None:

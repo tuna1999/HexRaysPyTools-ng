@@ -222,30 +222,40 @@ class AbstractMember:
     def score(self) -> int:
         """Likelihood this member is the right candidate for its offset.
 
-        Mirrors original ``AbstractMember.score`` (``core/temporary_structure.py:198-206``).
-        Higher = better candidate. Used by ``StructureModel.resolve_types``
-        to cull the worst candidates.
+        Higher = better. Used by ``StructureModel.resolve_types`` (which keeps
+        the higher-scoring candidate on collision).
 
-        Falls back to ``0xFFFF`` (worst) when the tinfo is unparseable —
-        matches the original.
+        Ranking (TRex-style behavior capture):
+        1. function pointers — strongest typed evidence (``0x1000 + len``);
+        2. named types via :func:`score_member` — size-ranked;
+        3. underscore-prefixed types (``_QWORD``, ``_DWORD``, …) — width
+           known but semantics unknown, penalized by ``score_member`` so any
+           named evidence outranks them;
+        4. ``0xFFFF`` only when the score cannot be computed at all.
+
+        (The previous version returned ``0xFFFF`` for underscore types — the
+        *worst* sentinel per its own docstring — while ``resolve_types``
+        keeps the *higher* score, so ``_QWORD`` manufactured by the scanner's
+        arithmetic fallthrough beat real typed evidence. Found by
+        verification/trex_bench against TRex, USENIX Security 25.)
         """
-        try:
-            from ...pure.scoring import score_member  # noqa: PLC0415
-
-            name = self.type_name
-            if name and isinstance(name, str) and not name.startswith("_"):
-                try:
-                    type_size = int(self.size) if self.size else 0
-                except (TypeError, ValueError):
-                    type_size = 0
-                return int(score_member(name, type_size))
-        except (ImportError, AttributeError, TypeError, KeyError, NameError):
-            pass
         try:
             if self.tinfo is not None and bool(self.tinfo.is_funcptr()):
                 return 0x1000 + len(str(self.tinfo))
         except (AttributeError, RuntimeError):
             pass
+        name = self.type_name
+        if name and isinstance(name, str):
+            try:
+                type_size = int(self.size) if self.size else 0
+            except (TypeError, ValueError):
+                type_size = 0
+            try:
+                from ...pure.scoring import score_member  # noqa: PLC0415
+
+                return int(score_member(name, type_size))
+            except (ImportError, AttributeError, TypeError, KeyError, ValueError):
+                pass
         return 0xFFFF
 
     def type_equals_to(self, tinfo: Any) -> bool:
