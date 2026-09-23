@@ -458,9 +458,15 @@ class SearchVisitor(ObjectDownwardsVisitor):
                     # ((type (__some_call *)(..., ..., ...))(var[idx]))(...)
                     return self._get_member(int(offset), cexpr, obj, parents[0].type)
                 _idx, tinfo = get_call_argument_info(parents[1], parents[0])
-                if tinfo is None:
-                    tinfo = self._pchar_tinfo
-                return self._get_member(int(offset), cexpr, obj, self._wider_tinfo(default_tinfo, tinfo))
+                if default_tinfo is None:
+                    # No deref width available — fall back to the callee's
+                    # parameter type (a guess) / char*.
+                    tinfo = tinfo if tinfo is not None else self._pchar_tinfo
+                    return self._get_member(int(offset), cexpr, obj, tinfo)
+                # The callee's parameter type is a decompiler guess, not a
+                # memory access — the deref width is the observed copy size
+                # (TRex: pass-as-argument adds no COPY_SIZES evidence).
+                return self._get_member(int(offset), cexpr, obj, default_tinfo)
             return self._get_member(int(offset), cexpr, obj, default_tinfo)
 
         if len(parents_type) >= 1 and parents_type[0] == "call":
