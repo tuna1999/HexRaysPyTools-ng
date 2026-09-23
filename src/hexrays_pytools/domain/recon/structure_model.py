@@ -616,7 +616,8 @@ class StructureModel(QtCore.QAbstractTableModel):
         self.endResetModel()
 
     def resolve_types(self) -> None:
-        """Disable lower-scoring candidates that collide with better ones."""
+        """Disable lower-scoring candidates that collide with better ones,
+        then subsume static element accesses into discovered arrays."""
         current_item: AbstractMember | None = None
         current_score = 0
         for item in self._items:
@@ -638,8 +639,39 @@ class StructureModel(QtCore.QAbstractTableModel):
             current_item = item
             current_score = item_score
 
+        self._subsume_array_elements()
         self._refresh_collisions()
         self.layoutChanged.emit()
+
+    def _subsume_array_elements(self) -> None:
+        """Fold static element accesses into discovered arrays.
+
+        TRex §3.3.4 aggregate analysis: when dynamic-index evidence produced
+        an array member at offset X with element size E, a static member at
+        X + k*E (k >= 1) of the same width is an element of that array, not
+        a distinct field — disable it so the flat model doesn't emit phantom
+        scalar fields inside the array run. Only concrete ``Member`` arrays
+        participate (``VoidMember`` byte-runs are a different concept).
+        """
+        arrays = [
+            item
+            for item in self._items
+            if bool(item.enabled)
+            and isinstance(item, Member)
+            and bool(item.is_array)
+            and int(item.size) in (2, 4, 8)
+        ]
+        if not arrays:
+            return
+        for item in self._items:
+            if not bool(item.enabled) or item in arrays:
+                continue
+            for arr in arrays:
+                elem = int(arr.size)
+                delta = int(item.offset) - int(arr.offset)
+                if delta >= elem and delta % elem == 0 and int(item.size) == elem:
+                    item.set_enabled(False)
+                    break
 
     def load_struct(self) -> None:
         """Load members from a named UDT in Local Types into the model."""

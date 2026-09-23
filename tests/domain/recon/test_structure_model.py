@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from unittest.mock import MagicMock
 
-from hexrays_pytools.domain.recon.member import AbstractMember
+from hexrays_pytools.domain.recon.member import AbstractMember, Member
 from hexrays_pytools.domain.recon.structure_model import StructureModel
 
 
@@ -405,6 +405,31 @@ def test_resolve_types_disables_worse_colliding_candidate() -> None:
 
     assert better.enabled is True
     assert worse.enabled is False
+
+
+def test_resolve_types_subsumes_static_elements_into_array() -> None:
+    """Static accesses inside a discovered array run are elements, not fields.
+
+    TRex §3.3.4: with array evidence at offset 4 (element size 4), a member
+    at 4 + k*4 of width 4 (e.g. `items[3]` at 16) is subsumed; a member of a
+    different width at an aligned offset (8-byte ptr at 8) is NOT subsumed.
+    """
+    elem_tinfo = MagicMock()
+    elem_tinfo.get_size.return_value = 4
+    ptr_tinfo = MagicMock()
+    ptr_tinfo.get_size.return_value = 8
+
+    arr = Member(offset=4, tinfo=elem_tinfo, name="field_4", is_array=True)
+    element = Member(offset=16, tinfo=elem_tinfo, name="field_10")
+    bystander = Member(offset=8, tinfo=ptr_tinfo, name="field_8")
+    model = StructureModel(items=[arr, element, bystander])
+
+    model.resolve_types()
+
+    assert arr.enabled is True
+    assert arr.is_array is True
+    assert element.enabled is False, "items[3] at 16 = element of array@4"
+    assert bystander.enabled is True, "different-width member is not an element"
 
 
 def test_load_struct_uses_named_tinfo_and_skips_padding(monkeypatch) -> None:
