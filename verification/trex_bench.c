@@ -18,6 +18,10 @@
  *   struct Unit    { int32_t x; int32_t y; };               (0,4)(4,4)
  *   struct List0   { struct List0* next; int32_t data; };   (0,8)(8,4)       [recursion @0]
  *   union  Mix     { uint32_t u32; uint8_t b[4]; };         (0,4)            [union]
+ *
+ * Segment 3 addition:
+ *   struct NegInner { int32_t x; };                           (0,4)
+ *   struct NegOuter { int32_t tag; struct NegInner inner; };   (0,4)(4,4)     [CONTAINING_RECORD via magic comment]
  * Built at -O0 (primary) and -O2 (robustness, mirrors TRex RQ3) with
  * -g0 so Hex-Rays gets no type hints — only symbol names.
  */
@@ -40,6 +44,8 @@ struct WithArr { int32_t prefix; int32_t items[8]; };
 struct MultiW  { uint32_t whole; uint32_t after; };
 struct Funcy   { int32_t id; int32_t (*cb)(int32_t); void* ctx; };
 struct Shapes  { char tag; int64_t val; };
+struct NegInner { int32_t x; };
+struct NegOuter { int32_t tag; struct NegInner inner; };
 
 __attribute__((noinline)) static void sink_i(int v) { g_sink = v; }
 __attribute__((noinline)) static void sink_p(void* p) { g_psink = p; }
@@ -144,6 +150,20 @@ __attribute__((noinline)) uint8_t bench_mix_narrow(union Mix* m) {
     return m->b[1];
 }
 
+/* Segment 3 — negative-offset (CONTAINING_RECORD) workflow.
+ *
+ * The function takes a pointer to NegInner and reaches back to the containing
+ * NegOuter via the standard CONTAINING_RECORD idiom (subtracting the inner
+ * offset from the pointer). After the bench harness programmatically applies
+ * the magic comment ``NegOuter+0`` to the lvar, Hex-Rays' negative-offset
+ * support rewrites the access into ``CONTAINING_RECORD(p, NegOuter, tag)``.
+ * Without the magic comment the only field recovered is ``inner.x`` at offset 0
+ * (the relative offset inside the inner struct).
+ */
+__attribute__((noinline)) int neg_offset_access(struct NegInner* p) {
+    return ((struct NegOuter*)((char*)p - 4))->tag + p->x;
+}
+
 static int cb_impl(int32_t x) { return (int)x * 3; }
 
 int main(void) {
@@ -180,5 +200,9 @@ int main(void) {
     sink_i((int)bench_mix_wide(&mx));
     sink_i((int)bench_mix_narrow(&mx));
     g_psink = (void*)(intptr_t)sd.v;
+    {
+        struct NegInner ni = {0};
+        sink_i(neg_offset_access(&ni));
+    }
     return g_sink == 0 && g_psink != 0 ? 0 : 1;
 }

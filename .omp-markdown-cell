@@ -1,38 +1,50 @@
-Đã làm xong đến mức cuối cùng. Tổng kết session:
+## Đã làm trong segment 3 (4 iterations, không có metric movement — ceiling đã verify)
 
-## Đã hoàn thành (14 commits, fb4ae45 → 823cb49)
-
-| Metric | Baseline | Cuối session | Δ |
-|---|---|---|---|
-| **O0 recon_score** | 0.6875 | **0.9375** | **+36.4%** |
-| **O2 recon_score** | 0.6562 | **0.8333** | **+26.9%** |
-| structs_full (O0/O2) | 2 / 1 | **5 / 4** | +150% / +300% |
-| member_precision (O0) | 0.875 | **0.96** | +9.7% |
-| member_precision (O2) | - | **0.88** | mới đo |
-
-## Trạng thái codebase
-- ✅ **608 tests pass** (coverage 80.88%, gate ≥ 80%)
-- ✅ `mypy --strict` clean trên toàn bộ `src/hexrays_pytools/`
-- ✅ `ruff check` clean
-- ✅ Benchmark deterministic qua nhiều lần chạy (`md5sum` cùng hash)
-- ✅ Project ở **TRex-parity ceiling trên fixture hiện tại**
-
-## Tại sao dừng
-Mọi gap còn lại đều **paper-impossibility bounds** — TRex itself không thể recover chúng:
-
-| Gap | Điểm còn | Lý do (paper) |
+| Iter | Hướng | Kết quả |
 |---|---|---|
-| Nested (4,8) flat vs nested | 0.5 O0 | §2.2 confounding stack shape |
-| HasUnit (4,8) không pack | 0.5 O0 | Auto-pack guard đúng (origin=0 = top-level); strict scorer không credit nested UDT |
-| WithArr (4,32) | 0.5 O0/O2 | §3.3.4 array count unknowable statically |
-| O2 Simple/Nested `(0,8)` merged | 1.0 O2 | gcc merge 2×4B → 8B `mov [rcx], rax` — asm cũng chỉ thấy int64 (§2.2 confounding ops) |
+| 1 | Khảo sát 4 directions (CONTAINING_RECORD, equality-merge, nested-aware scorer, auto-pack guard) | Đều ruled out — UI-bound, no-gain, game-risk, hoặc đã correct |
+| 2 | Sub-region scan extension cho `_check_call` (`helper(obj+off)` / `callee(&obj->u)`) | **REVERTED** — 3 blockers: over-matching, unit/byte confusion, strict scorer không credit nested UDT |
+| 3 | Test coverage pin cho queue 3-tuple | Tăng 1 test (608 pass), no metric movement |
+| 4 | Install Local Types trong bench (forward-enabling cho CONTAINING_RECORD workflow) | Code committed, metric không đổi vì gcc -g0 không có DWARF |
 
-**Đã thử tất cả hướng remaining** trong segments 2 & 3, kể cả sub-region scan extension (reverted vì 3 blockers độc lập: over-match, element/byte confusion, strict scorer không credit nested UDT). Mỗi hướng đều dẫn đến ceiling đã verify bằng ablation.
+## Đã thử TRONG segment 3 nhưng fail (honest)
 
-## Để tiếp tục research có ý nghĩa thực sự
-Cần `init_experiment new_segment=true` với **một trong**:
-1. **Fixture mới** tránh gaps bất khả (Nested nesting explicit in GT, WithArr static count, compiler không merge stores)
-2. **Nested-aware scorer** (secondary metric mới, TRex-faithful) — không gaming, mà mở rộng measurement dimension
-3. **TRex technique khác** chưa bench: GVN-equality-merging, φ-node propagation, return-value struct extraction
+**Sub-region scan** (`helper(obj+off)` / `&obj->u`):
+- Pattern `cot_add(cot_var, cot_num)` match quá rộng (bắt `printf("...", a1+1)` benign value use)
+- Element-unit vs byte-unit confusion: `parent.y.numval()` trả element units, không phải byte offset
+- O2 noise regression: 0.8333 → 0.7708 (HasUnit@O2 got a phantom `(1,8,__int64)` member)
+- Ngay cả khi fix hết: strict offset+size scorer không credit nested UDT (đã verify bằng ablation trong seg-2 iter-3)
 
-**Nếu không**, dự án đã đạt mục tiêu nghiên cứu paper: 10 kỹ thuật TRex ported, 2 v2-port bugs tìm thấy và fix (MRO shadowing, score inversion), fixture đạt paper-impossibility ceiling. Tôi sẽ không tiếp tục chạy iterations trên fixture này — đó là noise, không phải research.
+**Install Local Types**:
+- Đúng concept (TRex dùng `get_named_type` cho CONTAINING_RECORD + nested struct resolution)
+- Nhưng gcc `-g0` produce không DWARF → decompiler infer type names từ instructions, không phụ thuộc Local Types
+- Cần `-g` (DWARF) hoặc fixture thay đổi để gain metric — không game-friendly
+
+## Trạng thái cuối segment 3
+- **15 commits** từ baseline fb4ae45 → 4bf2a66
+- **O0 recon_score: 0.9375** (+36.4% từ baseline)
+- **O2 recon_score: 0.8333** (+26.9% từ baseline)
+- 608 tests pass, mypy strict clean, ruff clean, benchmark deterministic
+- **4/8 segment 3 budget** (còn 4 lượt reserved cho genuine new direction)
+
+## Tại sao loop tiếp sẽ là noise
+
+Mọi gap còn lại đều paper-impossibility:
+
+| Gap | Lý do |
+|---|---|
+| Nested (4,8) | Flat (4,4)+(8,4) ≡ nested struct — §2.2 confounding stack shape |
+| HasUnit (4,8) | Auto-pack code đúng (origin=0 = top-level); strict scorer không credit nested UDT |
+| WithArr (4,32) | Array count unknowable — §3.3.4 flexible array member |
+| O2 Simple/Nested (0,8) merged | gcc merge 2×4B stores thành `mov [rcx], rax` 8B duy nhất — TRex từ disassembly cũng chỉ thấy int64 |
+
+**Đã verify bằng ablation** rằng mọi direction scanner-side đều dẫn đến ceiling hoặc regression.
+
+## Để loop có ý nghĩa thật
+
+Cần `init_experiment new_segment=true` với:
+1. **Fixture mới** tránh impossibility-bound gaps (Nested explicit nested GT, WithArr static count, no-merged-stores compiler, hoặc `-g` DWARF)
+2. **Nested-aware scorer** (secondary metric mới, TRex-faithful)
+3. **TRex technique khác chưa bench**: GVN-equality-merging, φ-node propagation, return-value struct extraction
+
+Không thì dự án đã đạt mục tiêu nghiên cứu paper — 10 kỹ thuật TRex ported, 2 v2-port bugs fixed, fixture đạt paper-impossibility ceiling. Sẵn sàng đóng session nếu không có direction mới.

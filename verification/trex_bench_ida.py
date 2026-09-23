@@ -45,6 +45,8 @@ _LOCAL_TYPES_DECL = (
     "struct HasUnit { int tag; struct Unit u; }; "
     "struct List0 { struct List0 *next; int data; }; "
     "union Mix { unsigned int u32; unsigned char b[4]; };"
+    "struct NegInner { int x; };"
+    "struct NegOuter { int tag; struct NegInner inner; };"
 )
 
 
@@ -91,6 +93,159 @@ BENCH.update(
         "Mix": {"funcs": ["bench_mix_wide", "bench_mix_narrow"], "fields": [[0, 4]]},
     }
 )
+
+# Segment 3 — negative-offset (CONTAINING_RECORD, paper §3.3.4 sub-object).
+# Workflow: scan a struct-pointer lvar once, programmatically apply a
+# magic comment naming a containing struct + member, then run
+# ``collect_potential_negatives`` to rewrite the ctree with
+# ``CONTAINING_RECORD(...)`` and re-scan to recover the containing field.
+BENCH_NEGATIVE_OFFSETS: dict[str, dict[str, Any]] = {
+    "NegOuter": {
+        "funcs": ["neg_offset_access"],
+        # tag@0 (Outer), inner.x@0 (Inner), tag+offset together occupy
+        # absolute offsets 0 (Outer.tag) and 4 (Inner within Outer)... but
+        # we measure what the scanner can recover from a SINGLE lvar's
+        # CONTAINING_RECORD application — only NegOuter's tag (@0) is the
+        # containing access; the inner.x is a regular inner access (@0).
+        # Score it against gt [[0, 4]] (Outer.tag) and [[0, 4]] (Inner.x)
+        # are the same offset — measurement target is the containing tag.
+        "fields": [[0, 4]],
+        "magic_comment": "```NegOuter+0```",
+    },
+}
+
+
+def _apply_magic_comment(lvar: Any, cfunc: Any, comment: str) -> bool:
+    """Set the lvar's user comment to apply a CONTAINING_RECORD hint.
+
+    Returns True if the comment was applied (false on API mismatch —
+    ``set_user_lvar_comment`` is not available on every IDA build).
+    """
+    try:
+        ea = int(cfunc.entry_ea)
+        if hasattr(lvar, "set_user_lvar_comment"):
+            lvar.set_user_lvar_comment(ea, comment)
+            return True
+        # Fallback: set lvar.cmt attribute directly (some bindings expose it).
+        lvar.cmt = comment
+        return True
+    except Exception:
+        return False
+
+
+def _apply_containing_record(cfunc: Any, lvar_idx: int, comment: str) -> bool:
+    """Apply the magic comment + run negative_offsets.collect_potential_negatives.
+
+    Returns True if the rewrite succeeded and the ctree now contains
+    a CONTAINING_RECORD helper call.
+    """
+    from hexrays_pytools.domain.ctree.negative_offsets import (
+        collect_potential_negatives,
+    )
+
+    lvars = list(cfunc.get_lvars())
+    if lvar_idx >= len(lvars):
+        return False
+    lvar = lvars[lvar_idx]
+    if not _apply_magic_comment(lvar, cfunc, comment):
+        return False
+    try:
+        collect_potential_negatives(cfunc, {})
+    except Exception:
+        return False
+    return any(
+        getattr(ce, "op", None) is not None
+        and int(getattr(ce, "op", -1)) == idaapi.cot_helper
+        and getattr(ce, "helper", None) == "CONTAINING_RECORD"
+        for ce in _iter_all_cexprs(cfunc.body)
+    )
+
+
+def _iter_all_cexprs(item: Any) -> Any:
+    """Yield every cexpr under a ctree item (best-effort traversal)."""
+    stack = [item]
+    while stack:
+        cur = stack.pop()
+        if cur is None:
+            continue
+        yield cur
+        op = getattr(cur, "op", None)
+        if op is None:
+            continue
+        # cexprs: x, y; citems: expr, details
+        for attr in ("x", "y", "a", "expr"):
+            sub = getattr(cur, attr, None)
+            if sub is not None and getattr(sub, "op", None) is not None:
+                stack.append(sub)
+        if int(op) == idaapi.cit_expr:
+            stack.append(getattr(cur, "cexpr", None))
+        if int(op) == idaapi.cit_if:
+            for attr in ("ithen", "ielse"):
+                stack.append(getattr(cur, attr, None))
+
+
+def _scan_neg_offset(
+    fn: str,
+    var_idx: int,
+    magic_comment: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Scan + optionally run CONTAINING_RECORD rewrite.
+
+    Returns (members, errors). Members come from BOTH the original ctree
+    AND the CONTAINING_RECORD-rewritten ctree (whichever produced
+    evidence); ``resolve_types`` is run on the union.
+    """
+    from hexrays_pytools.domain.recon.structure_model import StructureModel
+    from hexrays_pytools.domain.recon.workspace import ReconWorkspace
+    from hexrays_pytools.domain.scanner.member_extractor import NewShallowSearchVisitor
+    from hexrays_pytools.domain.scanner.scanned_object import VariableObject
+    from hexrays_pytools.domain.session import Session
+
+    errs: list[str] = []
+    cfunc1 = _decompile(_resolve(fn))
+    workspace = ReconWorkspace()
+    workspace.set_model(StructureModel())
+    session = Session()
+    session.open()
+    try:
+        lvars1 = list(cfunc1.get_lvars())
+        NewShallowSearchVisitor(
+            cfunc1, 0, VariableObject(lvars1[var_idx], var_idx), workspace, consts=session.consts
+        ).process()
+    except Exception as e:
+        errs.append(f"scan1: {e!r}")
+
+    # Run CONTAINING_RECORD workflow: magic comment → collect_potential_negatives.
+    ok = _apply_containing_record(cfunc1, var_idx, magic_comment)
+    if ok:
+        # Refresh the cfunc — ctree was rewritten in place.
+        cfunc2 = _decompile(_resolve(fn))
+        try:
+            lvars2 = list(cfunc2.get_lvars())
+            NewShallowSearchVisitor(
+                cfunc2, 0, VariableObject(lvars2[var_idx], var_idx), workspace, consts=session.consts
+            ).process()
+        except Exception as e:
+            errs.append(f"scan2: {e!r}")
+
+    try:
+        workspace.model.resolve_types()
+    except Exception as e:
+        errs.append(f"resolve: {e!r}")
+    members = []
+    for m in workspace.model.items:
+        members.append(
+            {
+                "offset": int(m.offset),
+                "size": int(m.size),
+                "type_name": str(m.type_name),
+                "enabled": bool(m.enabled),
+                "is_array": bool(m.is_array),
+                "score": int(m.score),
+            }
+        )
+    session.close()
+    return members, errs
 
 def _resolve(name: str) -> int:
     ea = int(idc.get_name_ea_simple(name))
@@ -185,6 +340,29 @@ def run() -> list[dict[str, Any]]:
                         "is_array": bool(m.is_array),
                         "score": int(m.score),
                     }
+                )
+            results.append(entry)
+
+        # Negative-offset (CONTAINING_RECORD) workflow — paper §3.3.4.
+        for struct_name, spec in BENCH_NEGATIVE_OFFSETS.items():
+            entry: dict[str, Any] = {
+                "struct": struct_name,
+                "fields": spec["fields"],
+                "members": [],
+                "errors": [],
+            }
+            try:
+                fn = spec["funcs"][0]
+                members, errs = _scan_neg_offset(
+                    fn,
+                    var_idx=0,
+                    magic_comment=spec["magic_comment"],
+                )
+                entry["errors"] = [{"func": fn, "error": e} for e in errs]
+                entry["members"] = members
+            except Exception:
+                entry["errors"].append(
+                    {"func": "<neg_offset>", "error": traceback.format_exc()}
                 )
             results.append(entry)
     finally:
