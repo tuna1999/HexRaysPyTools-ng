@@ -74,6 +74,27 @@ def test_recursive_add_visit_returns_false_for_duplicate() -> None:
     assert len(v._new_for_visit) == 1
 
 
+def test_recursive_add_visit_carries_sub_offset() -> None:
+    """A sub-region visit queues ``(func_ea, arg_idx, sub_offset)``.
+
+    ``helper(&obj->u)`` queues the callee with the byte offset the
+    callee's argument pointer sits at within the parent's struct. The
+    drain reads ``sub_offset`` to shift ``self._origin`` so the callee
+    scan emits members at the sub-region's absolute offset.
+    """
+    v = _make_recursive(RecursiveObjectDownwardsVisitor)
+    # Explicit sub_offset propagates into the queue triple.
+    assert v._add_visit(0x401000, 0, sub_offset=4) is True
+    assert (0x401000, 0, 4) in v._new_for_visit
+    # Default sub_offset=0 (direct-arg calls).
+    assert v._add_visit(0x401100, 0) is True
+    assert (0x401100, 0, 0) in v._new_for_visit
+    # Dedup key is (func_ea, arg_idx), not the triple — a second
+    # ``_add_visit`` to the same target with any sub_offset is rejected.
+    assert v._add_visit(0x401000, 0, sub_offset=8) is False
+    assert len(v._new_for_visit) == 2
+
+
 def test_recursive_prepare_new_scan_resets_state() -> None:
     """prepare_new_scan re-points the visitor at a fresh cfunc + seed."""
     v = _make_recursive(RecursiveObjectDownwardsVisitor)
