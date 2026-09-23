@@ -58,11 +58,11 @@ def test_recursive_init_accepts_existing_visited() -> None:
 
 
 def test_recursive_add_visit_returns_true_for_new_target() -> None:
-    """_add_visit records a new (func, arg) and returns True."""
+    """_add_visit records a new (func, arg, sub_offset=0) and returns True."""
     v = _make_recursive(RecursiveObjectDownwardsVisitor)
     assert v._add_visit(0x401000, 1) is True
     assert (0x401000, 1) in v._visited
-    assert (0x401000, 1) in v._new_for_visit
+    assert (0x401000, 1, 0) in v._new_for_visit
 
 
 def test_recursive_add_visit_returns_false_for_duplicate() -> None:
@@ -159,7 +159,7 @@ def test_recursive_downwards_skips_argument_outside_callee_lvars(monkeypatch) ->
     from hexrays_pytools.domain.scanner import visitor_base as visitor_module
 
     v = _make_recursive(RecursiveObjectDownwardsVisitor)
-    v._new_for_visit.add((0x402000, 3))
+    v._new_for_visit.add((0x402000, 3, 0))
     callee = MagicMock()
     callee.get_lvars.return_value = [MagicMock()]
     monkeypatch.setattr(visitor_module, "decompile_function", lambda _ea: callee)
