@@ -117,6 +117,14 @@ class SearchVisitor(ObjectDownwardsVisitor):
         return self._consts.dummy_func if self._consts is not None else None
 
     def _manipulate(self, cexpr: Any, obj: Any) -> None:
+        # Delegate down the MRO first: for deep visitors this reaches
+        # RecursiveObjectVisitor._manipulate, whose _check_call queues
+        # callees for the recursive scan. The v2 port originally dropped
+        # this delegation (present in v1 api.py SearchVisitor._manipulate),
+        # which silently disabled deep-scan recursion — found by
+        # verification/trex_bench (bench_interproc) against TRex §5.2's
+        # interprocedural evidence.
+        super()._manipulate(cexpr, obj)
         # 1. Skip types we can't reason about (forward-declared pointers with
         #    unknown size, unknown primitives, etc.).
         if obj.tinfo is not None and not is_legal_type(obj.tinfo):
@@ -474,8 +482,26 @@ class SearchVisitor(ObjectDownwardsVisitor):
             return self._get_member(int(offset), cexpr, obj, default_tinfo)
 
         if len(parents_type) >= 1 and parents_type[0] == "call":
-            # call(..., (TYPE)(var + x), ...)
+            # call(..., (TYPE)(var + x), ...) — typed pointer-into-struct pass.
             tinfo = self._parse_call(parents[0], cexpr, int(offset))
+            if int(offset) == 0 and int(cexpr.op) in (
+                int(idaapi.cot_var),
+                int(idaapi.cot_obj),
+            ):
+                # Whole-object pass: the callee's parameter type is a
+                # decompiler guess, not an observed access (TRex: guesses
+                # must not pose as observations). Keep it only when it
+                # carries structure — pointer param → element hint (char*
+                # strings, udt shapes); plain integer-width guesses are
+                # dropped, the deep scan supplies the callee's real deref
+                # evidence instead.
+                try:
+                    if tinfo is not None and bool(tinfo.is_integral()) and int(
+                        tinfo.get_size()
+                    ) > 1:
+                        return None
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    pass
             return self._get_member(int(offset), cexpr, obj, tinfo)
 
         if len(parents_type) >= 1 and parents_type[0] == "asg" and parents[0].y == cexpr:
