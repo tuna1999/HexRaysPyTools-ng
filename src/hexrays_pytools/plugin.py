@@ -71,8 +71,18 @@ class HexRaysPyToolsPlugin(idaapi.plugin_t):  # type: ignore[misc]
             return int(idaapi.PLUGIN_SKIP)
 
         self.session = Session()
-        self.session.open()
+        # Load settings first so we know the desired log level, then
+        # attach handlers BEFORE session.open() runs — _init_workspaces()
+        # (TemplatedTypes reload, XrefStorage.open, ...) emits log.error /
+        # log.debug on failure paths; without handlers those calls were
+        # dropped silently or routed to stderr instead of the IDA Output
+        # window.
+        self.session._load_settings()
         setup_logging(self.session.log_level)
+        self.session._init_caches()
+        self.session._init_workspaces()
+        self.session.is_open = True
+        logger.info("Session opened for %s", self.session.idb_path or "<no IDB>")
 
         # F1.b: wire widget factories into Session. This is the only legal
         # UI→domain wiring point in the 5-layer architecture. Domain actions
