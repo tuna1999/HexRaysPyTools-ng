@@ -21,10 +21,12 @@ from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(_HERE))
 
 import ida_auto  # type: ignore[import-not-found]  # noqa: E402
 import idaapi  # type: ignore[import-not-found]  # noqa: E402
 import idc  # type: ignore[import-not-found]  # noqa: E402
+from trex_bench_truth import NEGATIVE_FIELDS  # noqa: E402
 
 # Ground-truth struct types imported into the IDB before any decompile so the
 # decompiler sees known struct names (rather than anonymous equivalents) and
@@ -104,12 +106,12 @@ BENCH.update(
 BENCH_NEGATIVE_OFFSETS: dict[str, dict[str, Any]] = {
     "NegOuter": {
         "funcs": ["neg_offset_access", "neg_outer_tag", "neg_outer_inner"],
-        "fields": [[0, 4]],
+        "fields": NEGATIVE_FIELDS["NegOuter"],
         "magic_comment": "```NegOuter+0```",
     },
     "Neg16Outer": {
         "funcs": ["neg16_access"],
-        "fields": [[0, 2]],
+        "fields": NEGATIVE_FIELDS["Neg16Outer"],
         "magic_comment": "```Neg16Outer+0```",
     },
 }
@@ -195,10 +197,10 @@ def _scan_neg_offset(
     same magic comment and shares the workspace model for evidence
     aggregation). Returns (members, errors).
     """
-    from hexrays_pytools.domain.scanner.member_extractor import NewShallowSearchVisitor
-    from hexrays_pytools.domain.scanner.scanned_object import VariableObject
     from hexrays_pytools.domain.recon.structure_model import StructureModel
     from hexrays_pytools.domain.recon.workspace import ReconWorkspace
+    from hexrays_pytools.domain.scanner.member_extractor import NewShallowSearchVisitor
+    from hexrays_pytools.domain.scanner.scanned_object import VariableObject
     from hexrays_pytools.domain.session import Session
 
     if isinstance(fns, str):

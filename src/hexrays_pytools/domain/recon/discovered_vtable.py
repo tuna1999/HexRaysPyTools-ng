@@ -367,9 +367,11 @@ class DiscoveredVTable(AbstractMember):
         logger.error("Failed to create vtable %s", vtable_name)
         return False
 
-    def get_udt_member(self, array_size: int = 0, offset: int = 0) -> Any:
+    def get_udt_member(
+        self, array_size: int = 0, offset: int = 0, flexible_array: bool = False
+    ) -> Any:
         """Build the class member as a pointer to the imported vtable type."""
-        if array_size:
+        if array_size or flexible_array:
             return None
         if not self.import_to_structures(ask=False):
             return None

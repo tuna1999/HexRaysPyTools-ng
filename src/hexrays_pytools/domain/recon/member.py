@@ -119,12 +119,17 @@ class AbstractMember:
             return self_end > int(other.offset)
         return other_end >= int(self.offset)
 
-    def get_udt_member(self, array_size: int = 0, offset: int = 0) -> Any:
+    def get_udt_member(
+        self, array_size: int = 0, offset: int = 0, flexible_array: bool = False
+    ) -> Any:
         """Build an ``idaapi.udt_member_t`` from this member.
 
         Mirrors original ``Member.get_udt_member``. ``offset`` is the
         base offset to subtract from ``self.offset`` to make the member
         relative to its containing structure.
+
+        ``flexible_array`` represents an unbounded final array as an IDA
+        array with zero elements, not as a one-element scalar.
 
         If ``self.tinfo`` is ``None`` (e.g. a :class:`VoidMember` built
         without ``BYTE_TINFO`` injection), the member is rendered as a
@@ -171,14 +176,14 @@ class AbstractMember:
                 # IDA stub). Caller skips the member.
                 return None
         udt_member.type = member_tinfo
-        if array_size:
+        if array_size or flexible_array:
             tmp = idaapi.tinfo_t(member_tinfo)
             tmp.create_array(member_tinfo, array_size)
             udt_member.type = tmp
         # Reconstruction offsets/sizes are stored in bytes; IDA 9 UDT
         # members use bit offsets/sizes.
         udt_member.offset = (int(self.offset) - int(offset)) * 8
-        element_count = int(array_size) if array_size else 1
+        element_count = 0 if flexible_array else int(array_size) if array_size else 1
         udt_member.size = int(self.size) * element_count * 8
         return udt_member
 
@@ -287,7 +292,7 @@ class AbstractMember:
             return False
 
 
-@dataclass
+@dataclass(eq=False)
 class Member(AbstractMember):
     """A struct member with a known tinfo."""
 
@@ -315,7 +320,7 @@ class Member(AbstractMember):
         self.name = f"{operand}_{int(self.offset):x}"
 
 
-@dataclass
+@dataclass(eq=False)
 class VoidMember(AbstractMember):
     """Fallback member when no tinfo can be inferred (byte/char).
 

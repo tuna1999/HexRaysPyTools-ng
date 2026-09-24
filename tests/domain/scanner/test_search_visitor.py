@@ -12,6 +12,7 @@ just the fields the helper touches.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -162,6 +163,48 @@ def test_search_visitor_parse_call_falls_back_to_char() -> None:
             visitor, call_cexpr, arg_cexpr, 0
         )
         assert result is char_tinfo
+
+
+def test_pointer_arithmetic_assignment_records_offset_without_extra_parent() -> None:
+    visitor = _make_visitor(consts=MagicMock())
+    visitor._origin = 0
+    visitor.parents = []
+    tinfo = MagicMock()
+    tinfo.get_size.return_value = 4
+    tinfo.is_ptr.return_value = False
+    visitor._consts.px_word_tinfo = tinfo
+    expr = SimpleNamespace(op=idaapi.cot_add)
+    assignment = SimpleNamespace(x=object(), y=expr)
+
+    with patch(
+        "hexrays_pytools.domain.scanner.member_extractor.ScannedObject.create",
+        return_value=MagicMock(),
+    ):
+        member = visitor._extract_member(expr, MagicMock(), 4, [assignment], ["asg"])
+
+    assert member.offset == 4
+
+
+def test_cast_wrapped_whole_object_call_does_not_invent_integer_field() -> None:
+    visitor = _make_visitor()
+    visitor.parents = []
+    visitor._origin = 0
+    variable = SimpleNamespace(op=idaapi.cot_var)
+    cast = SimpleNamespace(op=idaapi.cot_cast, type=MagicMock())
+    call = SimpleNamespace(op=idaapi.cot_call)
+    guessed_int = MagicMock()
+    guessed_int.is_integral.return_value = True
+    guessed_int.get_size.return_value = 4
+    with (
+        patch.object(visitor, "_parse_call", return_value=guessed_int),
+        patch(
+            "hexrays_pytools.domain.scanner.member_extractor.ScannedObject.create",
+            return_value=MagicMock(),
+        ),
+    ):
+        member = visitor._extract_member(variable, MagicMock(), 0, [cast, call], ["cast", "call"])
+
+    assert member is None
 
 
 def test_shallow_search_visitor_is_object_downwards() -> None:

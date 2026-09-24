@@ -290,15 +290,6 @@ class SearchVisitor(ObjectDownwardsVisitor):
             return self._deref_tinfo(tinfo)
         return self._char_tinfo
 
-    def _parse_left_assignee(
-        self,
-        cexpr: Any,  # noqa: ARG002 - stub for API parity
-        offset: int,  # noqa: ARG002 - stub for API parity
-    ) -> None:
-        """Stub — the original's `pass` body; future home for left-of-= parsing."""
-        # Original is `pass`; left-assignee extraction is not currently
-        # implemented (the original's comment also leaves it as a TODO).
-
     # --- Pointer expression extraction --------------------------------------
 
     def _extract_member_from_pointer(
@@ -428,6 +419,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         parents: list[Any],
         parents_type: list[str],
     ) -> Any:
+        whole_object = int(cexpr.op) in (int(idaapi.cot_var), int(idaapi.cot_obj))
         if len(parents_type) >= 1 and parents_type[0] == "cast":
             default_tinfo = parents[0].type
             cexpr = parents[0]
@@ -484,10 +476,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         if len(parents_type) >= 1 and parents_type[0] == "call":
             # call(..., (TYPE)(var + x), ...) — typed pointer-into-struct pass.
             tinfo = self._parse_call(parents[0], cexpr, int(offset))
-            if int(offset) == 0 and int(cexpr.op) in (
-                int(idaapi.cot_var),
-                int(idaapi.cot_obj),
-            ):
+            if int(offset) == 0 and whole_object:
                 # Whole-object pass: the callee's parameter type is a
                 # decompiler guess, not an observed access (TRex: guesses
                 # must not pose as observations). Keep it only when it
@@ -496,9 +485,11 @@ class SearchVisitor(ObjectDownwardsVisitor):
                 # dropped, the deep scan supplies the callee's real deref
                 # evidence instead.
                 try:
-                    if tinfo is not None and bool(tinfo.is_integral()) and int(
-                        tinfo.get_size()
-                    ) > 1:
+                    if (
+                        tinfo is not None
+                        and bool(tinfo.is_integral())
+                        and int(tinfo.get_size()) > 1
+                    ):
                         return None
                 except (AttributeError, RuntimeError, TypeError, ValueError):
                     pass
@@ -507,9 +498,10 @@ class SearchVisitor(ObjectDownwardsVisitor):
         if len(parents_type) >= 1 and parents_type[0] == "asg" and parents[0].y == cexpr:
             # other_obj = (TYPE) (var + offset) — pointer-arithmetic assignment
             # is real field-offset evidence; keep the pointer-width member.
-            self._parse_left_assignee(parents[1].x, int(offset))
             return self._get_member(int(offset), cexpr, obj, self._deref_tinfo(default_tinfo))
-        if int(cexpr.op) in (int(idaapi.cot_idx), int(idaapi.cot_ptr)) and is_legal_type(cexpr.type):
+        if int(cexpr.op) in (int(idaapi.cot_idx), int(idaapi.cot_ptr)) and is_legal_type(
+            cexpr.type
+        ):
             # cexpr is itself a deref/index expression consumed by the caller
             # (e.g. `a1[0]` feeding arithmetic) — its own type is the observed
             # copy width, stronger than the pointer-sized PX_WORD guess.

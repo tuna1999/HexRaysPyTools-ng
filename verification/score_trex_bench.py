@@ -9,7 +9,9 @@ Per ground-truth field (offset, size), the best matching *enabled* member
     0.0  no member at that offset
 member_precision = enabled members landing on a ground-truth offset / enabled
 members (hallucinated offsets penalized). structs_full = structs where every
-field scored 1.0.
+field scored 1.0. This measures raw candidate evidence, not the final
+packed IDA UDT. Negative-offset ground truth comes from trex_bench_truth.py
+instead of the potentially stale fields embedded in saved raw runs.
 
 Prints `METRIC name=value` lines. Primary: recon_score (-O0). Deterministic.
 """
@@ -19,6 +21,8 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+
+from trex_bench_truth import NEGATIVE_FIELDS
 
 EXACT = 1.0
 OFFSET_ONLY = 0.5
@@ -37,7 +41,9 @@ def _score_level(raw: dict[str, Any]) -> dict[str, float]:
 
     for entry in raw["results"]:
         structs += 1
-        fields = [(int(o), int(s)) for o, s in entry["fields"]]
+        fields = [
+            (int(o), int(s)) for o, s in NEGATIVE_FIELDS.get(entry["struct"], entry["fields"])
+        ]
         offsets_gt = {o for o, _ in fields}
         members = [m for m in entry["members"] if m["enabled"]]
         all_exact = True

@@ -10,7 +10,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from hexrays_pytools.domain.recon.member import AbstractMember, Member
 from hexrays_pytools.domain.recon.structure_model import StructureModel
@@ -49,6 +49,46 @@ def test_model_add_row_inserts_sorted() -> None:
     m.add_row(b)
     assert m.items[0].offset == 0x10
     assert m.items[1].offset == 0x20
+
+
+def test_repeated_scan_merges_same_offset_and_type_without_losing_sources() -> None:
+    m = StructureModel()
+    for origin, offset, source, type_name in (
+        (0, 0x6C, "first store", "int"),
+        (0x10, 0x5C, "second store", "int"),
+        (0, 0x6C, "other width", "_DWORD"),
+    ):
+        tinfo = MagicMock()
+        tinfo.dstr.return_value = type_name
+        tinfo.get_size.return_value = 4
+        tinfo.is_integral.return_value = True
+        tinfo.is_floating.return_value = False
+        m.add_row(
+            Member(
+                offset=offset,
+                origin=origin,
+                tinfo=tinfo,
+                scanned_variables={source},
+            )
+        )
+
+    assert m.rowCount() == 2
+    assert {item.type_name for item in m.items} == {"int", "_DWORD"}
+    assert next(item for item in m.items if item.type_name == "int").scanned_variables == {
+        "first store",
+        "second store",
+    }
+
+
+def test_repeated_untyped_scan_merges_byte_candidate_sources() -> None:
+    from hexrays_pytools.domain.recon.member import VoidMember
+
+    m = StructureModel()
+    m.add_row(VoidMember(offset=0x10, scanned_variables={"first access"}))
+    m.add_row(VoidMember(offset=0x10, scanned_variables={"second access"}))
+
+    assert m.rowCount() == 1
+    assert m.items[0].scanned_variables == {"first access", "second access"}
 
 
 def test_model_clear() -> None:
@@ -273,6 +313,28 @@ def test_calculate_array_size_uses_distance_to_next_enabled() -> None:
     assert m.calculate_array_size(0) == 2
 
 
+def test_pack_keeps_unbounded_trailing_array_flexible() -> None:
+    import idaapi
+
+    tinfo = MagicMock()
+    tinfo.get_size.return_value = 4
+    tinfo.dstr.return_value = "int"
+    array = Member(offset=4, tinfo=tinfo, name="items", is_array=True)
+    model = StructureModel(items=[array])
+
+    with (
+        patch.object(idaapi, "ask_str", return_value="Recovered"),
+        patch.object(idaapi, "print_tinfo", return_value="struct Recovered {};"),
+        patch.object(idaapi, "ask_text", return_value=None),
+    ):
+        model.pack()
+
+    udm = idaapi.udt_type_data_t.return_value.push_back.call_args.args[0]
+    assert udm.offset == 4 * 8
+    assert udm.size == 0
+    udm.type.create_array.assert_called_with(tinfo, 0)
+
+
 def test_get_name_returns_default_when_no_vtable() -> None:
     m = StructureModel()
     m.add_row(AbstractMember(offset=0, name="a"))
@@ -407,13 +469,32 @@ def test_resolve_types_disables_worse_colliding_candidate() -> None:
     assert worse.enabled is False
 
 
-def test_resolve_types_subsumes_static_elements_into_array() -> None:
-    """Static accesses inside a discovered array run are elements, not fields.
+def test_resolve_types_prefers_named_vtable_over_qword(monkeypatch) -> None:
+    import idaapi
 
-    TRex §3.3.4: with array evidence at offset 4 (element size 4), a member
-    at 4 + k*4 of width 4 (e.g. `items[3]` at 16) is subsumed; a member of a
-    different width at an aligned offset (8-byte ptr at 8) is NOT subsumed.
-    """
+    from hexrays_pytools.domain.recon.discovered_vtable import DiscoveredVTable
+
+    monkeypatch.setattr(idaapi, "get_name", lambda _ea: "off_401000")
+    monkeypatch.setattr(idaapi, "is_ident", lambda _name: True)
+    monkeypatch.setattr(idaapi, "inf_is_64bit", lambda: True)
+    tinfo = MagicMock()
+    tinfo.dstr.return_value = "_QWORD"
+    tinfo.get_size.return_value = 8
+    tinfo.is_funcptr.return_value = False
+    tinfo.is_integral.return_value = True
+    tinfo.is_floating.return_value = False
+    generic = Member(offset=0, tinfo=tinfo)
+    vtable = DiscoveredVTable(offset=0, address=0x401000)
+    model = StructureModel(items=[generic, vtable])
+
+    model.resolve_types()
+
+    assert vtable.enabled is True
+    assert generic.enabled is False
+
+
+def test_resolve_types_subsumes_static_elements_into_array() -> None:
+    """Only observations before the next distinct field can be array elements."""
     elem_tinfo = MagicMock()
     elem_tinfo.get_size.return_value = 4
     ptr_tinfo = MagicMock()
@@ -421,7 +502,7 @@ def test_resolve_types_subsumes_static_elements_into_array() -> None:
 
     arr = Member(offset=4, tinfo=elem_tinfo, name="field_4", is_array=True)
     element = Member(offset=16, tinfo=elem_tinfo, name="field_10")
-    bystander = Member(offset=8, tinfo=ptr_tinfo, name="field_8")
+    bystander = Member(offset=36, tinfo=ptr_tinfo, name="field_24")
     model = StructureModel(items=[arr, element, bystander])
 
     model.resolve_types()
@@ -430,6 +511,22 @@ def test_resolve_types_subsumes_static_elements_into_array() -> None:
     assert arr.is_array is True
     assert element.enabled is False, "items[3] at 16 = element of array@4"
     assert bystander.enabled is True, "different-width member is not an element"
+
+
+def test_resolve_types_preserves_same_width_field_terminating_array() -> None:
+    tinfo = MagicMock()
+    tinfo.get_size.return_value = 4
+    array = Member(offset=4, tinfo=tinfo, name="items", is_array=True)
+    element = Member(offset=16, tinfo=tinfo, name="items_3")
+    following_field = Member(offset=36, tinfo=tinfo, name="tag")
+    model = StructureModel(items=[array, element, following_field])
+
+    model.resolve_types()
+
+    assert array.is_array is True
+    assert element.enabled is False
+    assert following_field.enabled is True
+    assert model.calculate_array_size(0) == 8
 
 
 def test_resolve_types_packs_sub_struct_only_with_sub_region_origin() -> None:

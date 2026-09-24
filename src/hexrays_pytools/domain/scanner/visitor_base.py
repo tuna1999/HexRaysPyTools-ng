@@ -566,6 +566,10 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
             arg_cexpr = parent
         else:
             return
+        # Only cot_obj carries an address; indirect calls have a typed callee
+        # expression but no concrete function to recurse into.
+        if int(call_cexpr.x.op) != int(idaapi.cot_obj):
+            return
         idx, _ = get_call_argument_info(call_cexpr, arg_cexpr)
         if idx == -1:
             logger.debug(

@@ -520,6 +520,15 @@ class StructureModel(QtCore.QAbstractTableModel):
                         udt_data.push_back(member)
                         offset = int(item.offset) + int(item.size) * arr_size
                         continue
+                if (
+                    isinstance(item, Member)
+                    and self.get_next_enabled(bisect.bisect_left(self._items, item)) < 0
+                ):
+                    member = item.get_udt_member(offset=origin, flexible_array=True)
+                    if member is not None:
+                        udt_data.push_back(member)
+                        offset = int(item.offset)
+                        continue
             member = item.get_udt_member(offset=origin)
             if member is not None:
                 udt_data.push_back(member)
@@ -645,14 +654,10 @@ class StructureModel(QtCore.QAbstractTableModel):
         self.layoutChanged.emit()
 
     def _subsume_array_elements(self) -> None:
-        """Fold static element accesses into discovered arrays.
+        """Fold aligned static accesses before the next field into an array.
 
-        TRex §3.3.4 aggregate analysis: when dynamic-index evidence produced
-        an array member at offset X with element size E, a static member at
-        X + k*E (k >= 1) of the same width is an element of that array, not
-        a distinct field — disable it so the flat model doesn't emit phantom
-        scalar fields inside the array run. Only concrete ``Member`` arrays
-        participate (``VoidMember`` byte-runs are a different concept).
+        A same-width final observation may be a separate field, so retain it
+        as the boundary rather than assuming an unbounded array.
         """
         arrays = [
             item
@@ -662,17 +667,20 @@ class StructureModel(QtCore.QAbstractTableModel):
             and bool(item.is_array)
             and int(item.size) in (2, 4, 8)
         ]
-        if not arrays:
-            return
-        for item in self._items:
-            if not bool(item.enabled) or item in arrays:
+        for arr in arrays:
+            elem = int(arr.size)
+            later = [
+                item
+                for item in self._items
+                if bool(item.enabled) and int(item.offset) > int(arr.offset)
+            ]
+            if not later:
                 continue
-            for arr in arrays:
-                elem = int(arr.size)
+            for item in later:
                 delta = int(item.offset) - int(arr.offset)
-                if delta >= elem and delta % elem == 0 and int(item.size) == elem:
-                    item.set_enabled(False)
+                if item is later[-1] or item in arrays or delta % elem or int(item.size) != elem:
                     break
+                item.set_enabled(False)
 
     def _pack_contiguous_colocations(self) -> None:
         """Pack adjacent same-width members sharing a scanned origin.

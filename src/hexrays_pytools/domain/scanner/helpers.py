@@ -6,7 +6,7 @@ scanner (Phase A.5) and the scanner actions (Phase B.7):
 * :func:`decompile_function` — wraps :func:`idaapi.decompile` with a
   ``DecompilationFailure`` guard so a bad function doesn't abort the whole
   deep scan.
-* :class:`FunctionTouchVisitor` — pre-decompiles all callees of a function
+* :class:`FunctionTouchVisitor` — pre-decompiles callees with known addresses
   so Hex-Rays has parsed their argument types before the deep scanner
   needs them. Without this, the scanner sees placeholder arg types and
   misses member candidates. Used by the ``DeepScanVariable`` action.
@@ -48,14 +48,14 @@ def decompile_function(address: int) -> Any:
 
 
 class FunctionTouchVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
-    """Pre-decompile all callees of a function so their arg types are known.
+    """Pre-decompile direct callees of a function so their arg types are known.
 
     Hex-Rays lazily parses a function's argument types the first time you
     decompile it. The deep scanner reads callee arg types during the
-    scan — if the callee hasn't been decompiled yet, the arg types come
-    back as generic ``__int64`` and the scanner misses struct member
-    candidates. Walking the call graph first and forcing a decompile on
-    each callee primes the cache.
+    scan — if a directly called function hasn't been decompiled yet, the arg
+    types come back as generic ``__int64`` and the scanner misses struct
+    member candidates. Walking known call targets first and forcing a
+    decompile on each callee primes the cache.
 
     Mirrors the original ``helper.FunctionTouchVisitor`` (``helper.py:291``).
     """
@@ -70,8 +70,12 @@ class FunctionTouchVisitor(idaapi.ctree_parentee_t):  # type: ignore[misc]
         self._imported_ea = imported_ea
 
     def visit_expr(self, expression: Any) -> int:
-        if int(expression.op) == int(idaapi.cot_call):
-            self.functions.add(int(expression.x.obj_ea))
+        if int(expression.op) == int(idaapi.cot_call) and int(expression.x.op) == int(
+            idaapi.cot_obj
+        ):
+            target = int(expression.x.obj_ea)
+            if target != int(idaapi.BADADDR):
+                self.functions.add(target)
         return 0
 
     def touch_all(self) -> None:

@@ -7,6 +7,7 @@ in ``decompile_function``, the .plt / set-membership logic in
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import idaapi  # type: ignore[import-not-found]  # via mock_ida
@@ -71,7 +72,7 @@ def test_is_imported_ea_true_when_in_cache() -> None:
 
 
 def test_function_touch_visitor_visit_expr_collects_call_targets() -> None:
-    """visit_expr records the .x.obj_ea of every cot_call it sees."""
+    """visit_expr records addresses only for direct calls."""
     cfunc = MagicMock()
     touched: set[int] = set()
     imported_ea: set[int] = set()
@@ -79,6 +80,7 @@ def test_function_touch_visitor_visit_expr_collects_call_targets() -> None:
 
     call_expr = MagicMock()
     call_expr.op = idaapi.cot_call
+    call_expr.x.op = idaapi.cot_obj
     call_expr.x.obj_ea = 0x405000
     v.visit_expr(call_expr)
     assert 0x405000 in v.functions
@@ -88,6 +90,14 @@ def test_function_touch_visitor_visit_expr_collects_call_targets() -> None:
     num_expr.op = idaapi.cot_num
     v.visit_expr(num_expr)
     assert v.functions == {0x405000}
+
+
+def test_function_touch_visitor_ignores_indirect_calls() -> None:
+    v = FunctionTouchVisitor(MagicMock(), set(), set())
+    call = SimpleNamespace(op=idaapi.cot_call, x=SimpleNamespace(op=idaapi.cot_var))
+
+    assert v.visit_expr(call) == 0
+    assert v.functions == set()
 
 
 def test_function_touch_visitor_process_marks_function_touched() -> None:

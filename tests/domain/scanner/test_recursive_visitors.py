@@ -7,6 +7,7 @@ leave_expr / `_check_call` / `_recursive_process`) is verified in real IDA.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import idaapi  # type: ignore[import-not-found]  # via mock_ida
@@ -174,6 +175,35 @@ def test_recursive_downwards_check_call_is_overridden() -> None:
     # returns early without raising.
     v.parent_expr = MagicMock(return_value=None)  # no parent → early return
     v._check_call(MagicMock())  # should not raise NotImplementedError
+
+
+def test_recursive_downwards_skips_indirect_call_without_reading_target() -> None:
+    v = _make_recursive(RecursiveObjectDownwardsVisitor)
+    arg = object()
+    call = SimpleNamespace(op=idaapi.cot_call, x=SimpleNamespace(op=idaapi.cot_var), a=[arg])
+    v.parent_expr = MagicMock(return_value=call)
+    v.parents = MagicMock()
+    v.parents.size.return_value = 1
+
+    v._check_call(arg)
+    assert v._new_for_visit == set()
+
+
+def test_recursive_downwards_queues_direct_call() -> None:
+    v = _make_recursive(RecursiveObjectDownwardsVisitor)
+    arg = object()
+    call = MagicMock()
+    call.op = idaapi.cot_call
+    call.x.op = idaapi.cot_obj
+    call.x.obj_ea = 0x402000
+    call.x.type.get_pointed_object().get_nargs.return_value = 0
+    call.a = [arg]
+    v.parent_expr = MagicMock(return_value=call)
+    v.parents = MagicMock()
+    v.parents.size.return_value = 1
+
+    v._check_call(arg)
+    assert v._new_for_visit == {(0x402000, 0, 0)}
 
 
 def test_recursive_downwards_skips_argument_outside_callee_lvars(monkeypatch) -> None:
