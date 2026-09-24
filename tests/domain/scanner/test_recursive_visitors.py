@@ -7,6 +7,7 @@ leave_expr / `_check_call` / `_recursive_process`) is verified in real IDA.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import idaapi  # type: ignore[import-not-found]  # via mock_ida
@@ -58,11 +59,11 @@ def test_recursive_init_accepts_existing_visited() -> None:
 
 
 def test_recursive_add_visit_returns_true_for_new_target() -> None:
-    """_add_visit records a new (func, arg) and returns True."""
+    """_add_visit records a new (func, arg, sub_offset=0) and returns True."""
     v = _make_recursive(RecursiveObjectDownwardsVisitor)
     assert v._add_visit(0x401000, 1) is True
     assert (0x401000, 1) in v._visited
-    assert (0x401000, 1) in v._new_for_visit
+    assert (0x401000, 1, 0) in v._new_for_visit
 
 
 def test_recursive_add_visit_returns_false_for_duplicate() -> None:
@@ -72,6 +73,27 @@ def test_recursive_add_visit_returns_false_for_duplicate() -> None:
     assert v._add_visit(0x401000, 1) is False  # already visited
     # Queue must not gain a duplicate
     assert len(v._new_for_visit) == 1
+
+
+def test_recursive_add_visit_carries_sub_offset() -> None:
+    """A sub-region visit queues ``(func_ea, arg_idx, sub_offset)``.
+
+    ``helper(&obj->u)`` queues the callee with the byte offset the
+    callee's argument pointer sits at within the parent's struct. The
+    drain reads ``sub_offset`` to shift ``self._origin`` so the callee
+    scan emits members at the sub-region's absolute offset.
+    """
+    v = _make_recursive(RecursiveObjectDownwardsVisitor)
+    # Explicit sub_offset propagates into the queue triple.
+    assert v._add_visit(0x401000, 0, sub_offset=4) is True
+    assert (0x401000, 0, 4) in v._new_for_visit
+    # Default sub_offset=0 (direct-arg calls).
+    assert v._add_visit(0x401100, 0) is True
+    assert (0x401100, 0, 0) in v._new_for_visit
+    # Dedup key is (func_ea, arg_idx), not the triple — a second
+    # ``_add_visit`` to the same target with any sub_offset is rejected.
+    assert v._add_visit(0x401000, 0, sub_offset=8) is False
+    assert len(v._new_for_visit) == 2
 
 
 def test_recursive_prepare_new_scan_resets_state() -> None:
@@ -155,11 +177,40 @@ def test_recursive_downwards_check_call_is_overridden() -> None:
     v._check_call(MagicMock())  # should not raise NotImplementedError
 
 
+def test_recursive_downwards_skips_indirect_call_without_reading_target() -> None:
+    v = _make_recursive(RecursiveObjectDownwardsVisitor)
+    arg = object()
+    call = SimpleNamespace(op=idaapi.cot_call, x=SimpleNamespace(op=idaapi.cot_var), a=[arg])
+    v.parent_expr = MagicMock(return_value=call)
+    v.parents = MagicMock()
+    v.parents.size.return_value = 1
+
+    v._check_call(arg)
+    assert v._new_for_visit == set()
+
+
+def test_recursive_downwards_queues_direct_call() -> None:
+    v = _make_recursive(RecursiveObjectDownwardsVisitor)
+    arg = object()
+    call = MagicMock()
+    call.op = idaapi.cot_call
+    call.x.op = idaapi.cot_obj
+    call.x.obj_ea = 0x402000
+    call.x.type.get_pointed_object().get_nargs.return_value = 0
+    call.a = [arg]
+    v.parent_expr = MagicMock(return_value=call)
+    v.parents = MagicMock()
+    v.parents.size.return_value = 1
+
+    v._check_call(arg)
+    assert v._new_for_visit == {(0x402000, 0, 0)}
+
+
 def test_recursive_downwards_skips_argument_outside_callee_lvars(monkeypatch) -> None:
     from hexrays_pytools.domain.scanner import visitor_base as visitor_module
 
     v = _make_recursive(RecursiveObjectDownwardsVisitor)
-    v._new_for_visit.add((0x402000, 3))
+    v._new_for_visit.add((0x402000, 3, 0))
     callee = MagicMock()
     callee.get_lvars.return_value = [MagicMock()]
     monkeypatch.setattr(visitor_module, "decompile_function", lambda _ea: callee)

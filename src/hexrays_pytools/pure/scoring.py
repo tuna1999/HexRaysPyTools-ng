@@ -5,7 +5,7 @@ same offset during `Resolve Conflicts` in the Structure Builder.
 
 Scoring factors (higher = better):
     + log2(size) for size 1, 2, 4, 8
-    + 0x2000 if name contains 'vtable'
+    + 0x2000 if name contains 'vtable', 'vftable', or 'vtbl'
     - 0x1000 if name starts with '_' (likely auto-generated)
     - 0xFFFF if size is 0 (invalid member)
 """
@@ -32,7 +32,7 @@ def score_member(name: str, type_size: int) -> int:
 
     if name.startswith("_"):
         score -= _UNDERSCORE_PENALTY
-    if "vtable" in name.lower():
+    if any(marker in name.lower() for marker in ("vtable", "vftable", "vtbl")):
         score += _VTABLE_BONUS
 
     return score

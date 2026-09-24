@@ -246,20 +246,46 @@ def test_score_funcptr_gets_mid_value() -> None:
     assert 0x1000 <= s < 0xFFFF
 
 
-def test_score_unknown_name_worst_case() -> None:
-    """A type name missing from the scoring table falls back to 0xFFFF.
+def test_score_underscore_unknown_type_penalized() -> None:
+    """Unknown underscore TYPES rank below named evidence.
 
-    Mirrors v1: ``score_table(type_name)`` raises KeyError → funcptr check →
-    0xFFFF. A leading-underscore name skips the table lookup entirely and
-    also lands on the funcptr/0xFFFF path.
+    Contract (TRex-informed, trex_bench session): ``score_member``'s
+    ``-0x1000`` underscore penalty applies to unknown underscore types
+    (``_UnknownBlob *``, ``_SomeUnknownStruct *``). IDA primitives
+    (``_QWORD``, ``_DWORD`` — see the next test) are exempt: they are
+    width-true behavior captures, not auto-generated names.
     """
     tinfo = MagicMock()
     tinfo.dstr.return_value = "_SomeUnknownStruct *"
     tinfo.is_funcptr.return_value = False
+    tinfo.is_integral.return_value = False
+    tinfo.is_floating.return_value = False
     tinfo.get_size.return_value = 4
     m = AbstractMember(offset=0, tinfo=tinfo, name="_SomeUnknownStruct *")
-    assert m.score == 0xFFFF
+    assert m.score < 0
 
+
+def test_score_ida_primitive_not_penalized_and_covers_subwidth() -> None:
+    """IDA primitives (``_DWORD``/``_QWORD``) score by size, unpenalized.
+
+    Regression (trex_bench, MultiW): a ``char`` write inside a dword load
+    must not eliminate the covering ``_DWORD`` candidate — TRex would union
+    them, so resolve_types must keep the wider primitive.
+    """
+    dword = MagicMock()
+    dword.dstr.return_value = "_DWORD"
+    dword.get_size.return_value = 4
+    dword.is_funcptr.return_value = False
+    dword.is_integral.return_value = True
+    char = MagicMock()
+    char.dstr.return_value = "char"
+    char.get_size.return_value = 1
+    char.is_funcptr.return_value = False
+    char.is_integral.return_value = True
+    m_dword = AbstractMember(offset=0, tinfo=dword)
+    m_char = AbstractMember(offset=1, tinfo=char)
+    assert m_dword.score >= 0
+    assert m_dword.score > m_char.score
 
 def test_type_equals_to() -> None:
     """type_equals_to delegates to tinfo.equals_to; None-safe both ways."""

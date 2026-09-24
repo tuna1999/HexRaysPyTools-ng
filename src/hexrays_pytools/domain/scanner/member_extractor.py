@@ -32,6 +32,7 @@ from ...domain.types.func_type import get_call_argument_info
 from ...domain.types.tinfo_utils import is_legal_type
 from ...infra.arch.arch import (
     get_funcs_calling_address,
+    get_insn_mem_size,
     is_code_ea,
     to_hex,
 )
@@ -116,6 +117,14 @@ class SearchVisitor(ObjectDownwardsVisitor):
         return self._consts.dummy_func if self._consts is not None else None
 
     def _manipulate(self, cexpr: Any, obj: Any) -> None:
+        # Delegate down the MRO first: for deep visitors this reaches
+        # RecursiveObjectVisitor._manipulate, whose _check_call queues
+        # callees for the recursive scan. The v2 port originally dropped
+        # this delegation (present in v1 api.py SearchVisitor._manipulate),
+        # which silently disabled deep-scan recursion — found by
+        # verification/trex_bench (bench_interproc) against TRex §5.2's
+        # interprocedural evidence.
+        super()._manipulate(cexpr, obj)
         # 1. Skip types we can't reason about (forward-declared pointers with
         #    unknown size, unknown primitives, etc.).
         if obj.tinfo is not None and not is_legal_type(obj.tinfo):
@@ -173,6 +182,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         obj: Any,
         tinfo: Any = None,
         obj_ea: Any = None,
+        is_array: bool = False,
     ) -> Any:
         """Build the right ``Member``/``VoidMember``/``DiscoveredVTable`` for the offset.
 
@@ -261,6 +271,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
             tinfo=tinfo,
             origin=self._origin,
             scanned_variables={scan_obj},
+            is_array=is_array,
         )
 
     def _parse_call(
@@ -278,15 +289,6 @@ class SearchVisitor(ObjectDownwardsVisitor):
         if tinfo is not None:
             return self._deref_tinfo(tinfo)
         return self._char_tinfo
-
-    def _parse_left_assignee(
-        self,
-        cexpr: Any,  # noqa: ARG002 - stub for API parity
-        offset: int,  # noqa: ARG002 - stub for API parity
-    ) -> None:
-        """Stub — the original's `pass` body; future home for left-of-= parsing."""
-        # Original is `pass`; left-assignee extraction is not currently
-        # implemented (the original's comment also leaves it as a TODO).
 
     # --- Pointer expression extraction --------------------------------------
 
@@ -308,9 +310,10 @@ class SearchVisitor(ObjectDownwardsVisitor):
         if len(parents_type) >= 1 and parents_type[0] in ("idx", "add"):
             # `obj[idx]` or `(TYPE *) + x`
             if int(parents[0].y.op) != int(idaapi.cot_num):
-                # Dynamic offset — can't reason about it.
-                logger.debug("  ptr: skip '%s' (dynamic %s offset)", str(obj.name), parents_type[0])
-                return None
+                # Dynamic offset — array evidence (TRex colocation §3.3.3):
+                # a symbolic index over a base pointer means the base points
+                # at a run of elements, not a scalar field.
+                return self._extract_array_member(cexpr, obj, parents[0], parents_type[0])
             offset = int(parents[0].y.numval()) * int(cexpr.type.get_ptrarr_objsize())
             cexpr = self.parent_expr()
             if parents_type[0] == "add":
@@ -333,6 +336,52 @@ class SearchVisitor(ObjectDownwardsVisitor):
             offset = 0
 
         return self._extract_member(cexpr, obj, offset, parents, parents_type)
+
+    def _extract_array_member(self, cexpr: Any, obj: Any, node: Any, kind: str) -> Any:
+        """Dynamic-index access → array member evidence (TRex colocation §3.3.3).
+
+        ``base[i]`` / ``base + i`` with symbolic ``i``: the element type is the
+        deref expression's own type; the array start offset is the constant
+        term of the index expression (``base[i + 3]`` → offset ``3 * elemsize``),
+        or 0 for a bare symbolic index. Element count is unknowable statically
+        (TRex models these as flexible array members).
+        """
+        try:
+            elem_size = int(cexpr.type.get_ptrarr_objsize())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            logger.debug("  array: skip '%s' (no element size)", str(obj.name))
+            return None
+
+        const_term = 0
+        if kind == "idx":
+            elem_tinfo = node.type if is_legal_type(node.type) else None
+            index_expr = node.y
+            if int(index_expr.op) in (int(idaapi.cot_add), int(idaapi.cot_sub)):
+                negate = int(index_expr.op) == int(idaapi.cot_sub)
+                left, right = index_expr.x, index_expr.y
+                if int(left.op) == int(idaapi.cot_num):
+                    const_term = int(left.numval())
+                elif int(right.op) == int(idaapi.cot_num):
+                    const_term = -int(right.numval()) if negate else int(right.numval())
+        else:  # "add" — pointer arithmetic with a symbolic offset
+            elem_tinfo = self._deref_tinfo(cexpr.type)
+        if elem_tinfo is None:
+            elem_tinfo = self._deref_tinfo(cexpr.type)
+        if elem_tinfo is None:
+            logger.debug("  array: skip '%s' (no element type)", str(obj.name))
+            return None
+
+        offset = const_term * elem_size
+        if offset < 0:
+            logger.debug("  array: skip '%s' (negative offset %d)", str(obj.name), offset)
+            return None
+        logger.debug(
+            "  array: '%s' dynamic index -> element %s at offset %d",
+            str(obj.name),
+            str(elem_tinfo),
+            offset,
+        )
+        return self._get_member(offset, cexpr, obj, elem_tinfo, is_array=True)
 
     def _extract_member_from_xword(
         self,
@@ -370,6 +419,7 @@ class SearchVisitor(ObjectDownwardsVisitor):
         parents: list[Any],
         parents_type: list[str],
     ) -> Any:
+        whole_object = int(cexpr.op) in (int(idaapi.cot_var), int(idaapi.cot_obj))
         if len(parents_type) >= 1 and parents_type[0] == "cast":
             default_tinfo = parents[0].type
             cexpr = parents[0]
@@ -379,39 +429,149 @@ class SearchVisitor(ObjectDownwardsVisitor):
             default_tinfo = self._px_word_tinfo
 
         if len(parents_type) >= 1 and parents_type[0] in ("idx", "ptr"):
+            # TRex-style behavior capture: the deref/index expression's own
+            # type is the observed copy width (`a1[2]` on `_DWORD *` observes
+            # a 4-byte copy) — richer than the pointer-sized PX_WORD guess.
+            deref_tinfo = parents[0].type
+            if not is_legal_type(deref_tinfo):
+                deref_tinfo = self._deref_tinfo(default_tinfo)
+            deref_tinfo = self._asm_narrowed_tinfo(deref_tinfo, parents[0])
             if len(parents_type) >= 2 and parents_type[1] == "cast":
-                default_tinfo = parents[1].type
                 cexpr = parents[0]
                 del parents_type[0]
                 del parents[0]
-            else:
-                default_tinfo = self._deref_tinfo(default_tinfo)
+            # A value cast after the load is a post-load operation — it never
+            # changes the observed memory-access width (TRex COPY_SIZES come
+            # from the deref expression, not from value contexts).
+            default_tinfo = deref_tinfo
 
             if len(parents_type) >= 2 and parents_type[1] == "asg":
                 if parents[1].x == parents[0]:
-                    # *(TYPE *)(var + x) = ???
+                    # *(TYPE *)(var + x) = ??? — the STORE's memory width is
+                    # the deref type; the value may still contribute richer
+                    # structure (funcptr / vtable) at the same or wider width.
                     obj_ea = self._extract_obj_ea(parents[1].y)
-                    return self._get_member(int(offset), cexpr, obj, parents[1].y.type, obj_ea)
-                return self._get_member(int(offset), cexpr, obj, parents[1].x.type)
+                    asg_tinfo = self._wider_tinfo(default_tinfo, parents[1].y.type)
+                    return self._get_member(int(offset), cexpr, obj, asg_tinfo, obj_ea)
+                # lhs = *(TYPE *)(var + x) — a READ into a local: the local's
+                # type is a value context, not memory evidence; the deref
+                # (asm-narrowed) type is the whole observation.
+                return self._get_member(int(offset), cexpr, obj, default_tinfo)
             if len(parents_type) >= 2 and parents_type[1] == "call":
                 if parents[1].x == parents[0]:
                     # ((type (__some_call *)(..., ..., ...))(var[idx]))(...)
                     return self._get_member(int(offset), cexpr, obj, parents[0].type)
                 _idx, tinfo = get_call_argument_info(parents[1], parents[0])
-                if tinfo is None:
-                    tinfo = self._pchar_tinfo
-                return self._get_member(int(offset), cexpr, obj, tinfo)
+                if default_tinfo is None:
+                    # No deref width available — fall back to the callee's
+                    # parameter type (a guess) / char*.
+                    tinfo = tinfo if tinfo is not None else self._pchar_tinfo
+                    return self._get_member(int(offset), cexpr, obj, tinfo)
+                # The callee's parameter type is a decompiler guess, not a
+                # memory access — the deref width is the observed copy size
+                # (TRex: pass-as-argument adds no COPY_SIZES evidence).
+                return self._get_member(int(offset), cexpr, obj, default_tinfo)
             return self._get_member(int(offset), cexpr, obj, default_tinfo)
 
         if len(parents_type) >= 1 and parents_type[0] == "call":
-            # call(..., (TYPE)(var + x), ...)
+            # call(..., (TYPE)(var + x), ...) — typed pointer-into-struct pass.
             tinfo = self._parse_call(parents[0], cexpr, int(offset))
+            if int(offset) == 0 and whole_object:
+                # Whole-object pass: the callee's parameter type is a
+                # decompiler guess, not an observed access (TRex: guesses
+                # must not pose as observations). Keep it only when it
+                # carries structure — pointer param → element hint (char*
+                # strings, udt shapes); plain integer-width guesses are
+                # dropped, the deep scan supplies the callee's real deref
+                # evidence instead.
+                try:
+                    if (
+                        tinfo is not None
+                        and bool(tinfo.is_integral())
+                        and int(tinfo.get_size()) > 1
+                    ):
+                        return None
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    pass
             return self._get_member(int(offset), cexpr, obj, tinfo)
 
         if len(parents_type) >= 1 and parents_type[0] == "asg" and parents[0].y == cexpr:
-            # other_obj = (TYPE) (var + offset)
-            self._parse_left_assignee(parents[1].x, int(offset))
-        return self._get_member(int(offset), cexpr, obj, self._deref_tinfo(default_tinfo))
+            # other_obj = (TYPE) (var + offset) — pointer-arithmetic assignment
+            # is real field-offset evidence; keep the pointer-width member.
+            return self._get_member(int(offset), cexpr, obj, self._deref_tinfo(default_tinfo))
+        if int(cexpr.op) in (int(idaapi.cot_idx), int(idaapi.cot_ptr)) and is_legal_type(
+            cexpr.type
+        ):
+            # cexpr is itself a deref/index expression consumed by the caller
+            # (e.g. `a1[0]` feeding arithmetic) — its own type is the observed
+            # copy width, stronger than the pointer-sized PX_WORD guess.
+            return self._get_member(int(offset), cexpr, obj, cexpr.type)
+        # Pure value use of the scanned object (comparisons, arithmetic on the
+        # pointer itself) carries no member evidence — TRex records it as an
+        # operation on the pointer's type, not as a field observation.
+        return None
+
+    @staticmethod
+    def _wider_tinfo(base: Any, refine: Any) -> Any:
+        """Return the wider of two tinfos.
+
+        TRex COPY_SIZES union: when a load/store of width ``base`` feeds a
+        narrower value context ``refine`` (truncating cast, assignment,
+        call argument), the member must keep the observed access width —
+        the narrowing op happened after the memory access. Ties and any API
+        error prefer ``refine`` (the more specific context).
+        """
+        if base is None:
+            return refine
+        if refine is None:
+            return base
+        try:
+            base_size = int(base.get_size())
+            refine_size = int(refine.get_size())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return refine
+        return base if base_size > refine_size else refine
+
+    def _asm_narrowed_tinfo(self, tinfo: Any, deref_expr: Any) -> Any:
+        """Narrow a deref-derived tinfo to the machine instruction's width.
+
+        TRex §3.3.1: disassembly observes the actual copy width; Hex-Rays
+        can re-type it (``mov eax, [rcx]`` is a 4-byte copy even when the
+        ctree deref feeds a 64-bit expression). Only narrows integral
+        types — pointers, floats and UDTs are kept as the ctree derived
+        them, and any decode failure keeps the ctree width.
+        """
+        try:
+            if tinfo is None or not bool(tinfo.is_integral()):
+                return tinfo
+            ea = int(deref_expr.ea)
+            if ea == int(idaapi.BADADDR):
+                ea = int(find_asm_address(deref_expr, self.parents))
+            mem_size = get_insn_mem_size(ea)
+            if mem_size is None:
+                return tinfo
+            size = int(tinfo.get_size())
+            if size <= mem_size or mem_size not in (1, 2, 4, 8, 16):
+                return tinfo
+            btf_name = {1: "BTF_BYTE", 2: "BTF_WORD", 4: "BTF_DWORD", 8: "BTF_QWORD"}.get(
+                mem_size
+            )
+            btf = getattr(idaapi, btf_name, None) if btf_name is not None else None
+            if not isinstance(btf, int):
+                return tinfo
+            narrowed = idaapi.tinfo_t(int(btf))
+            if int(narrowed.get_size()) == mem_size:
+                logger.debug(
+                    "  asm-narrowed deref %s -> %s (%d-byte access at %s)",
+                    str(tinfo),
+                    str(narrowed.dstr()),
+                    mem_size,
+                    to_hex(ea),
+                )
+                return narrowed
+            return tinfo
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return tinfo
 
     @staticmethod
     def _extract_obj_ea(cexpr: Any) -> int | None:

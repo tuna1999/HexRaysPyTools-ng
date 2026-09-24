@@ -10,9 +10,9 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from hexrays_pytools.domain.recon.member import AbstractMember
+from hexrays_pytools.domain.recon.member import AbstractMember, Member
 from hexrays_pytools.domain.recon.structure_model import StructureModel
 
 
@@ -49,6 +49,46 @@ def test_model_add_row_inserts_sorted() -> None:
     m.add_row(b)
     assert m.items[0].offset == 0x10
     assert m.items[1].offset == 0x20
+
+
+def test_repeated_scan_merges_same_offset_and_type_without_losing_sources() -> None:
+    m = StructureModel()
+    for origin, offset, source, type_name in (
+        (0, 0x6C, "first store", "int"),
+        (0x10, 0x5C, "second store", "int"),
+        (0, 0x6C, "other width", "_DWORD"),
+    ):
+        tinfo = MagicMock()
+        tinfo.dstr.return_value = type_name
+        tinfo.get_size.return_value = 4
+        tinfo.is_integral.return_value = True
+        tinfo.is_floating.return_value = False
+        m.add_row(
+            Member(
+                offset=offset,
+                origin=origin,
+                tinfo=tinfo,
+                scanned_variables={source},
+            )
+        )
+
+    assert m.rowCount() == 2
+    assert {item.type_name for item in m.items} == {"int", "_DWORD"}
+    assert next(item for item in m.items if item.type_name == "int").scanned_variables == {
+        "first store",
+        "second store",
+    }
+
+
+def test_repeated_untyped_scan_merges_byte_candidate_sources() -> None:
+    from hexrays_pytools.domain.recon.member import VoidMember
+
+    m = StructureModel()
+    m.add_row(VoidMember(offset=0x10, scanned_variables={"first access"}))
+    m.add_row(VoidMember(offset=0x10, scanned_variables={"second access"}))
+
+    assert m.rowCount() == 1
+    assert m.items[0].scanned_variables == {"first access", "second access"}
 
 
 def test_model_clear() -> None:
@@ -273,6 +313,28 @@ def test_calculate_array_size_uses_distance_to_next_enabled() -> None:
     assert m.calculate_array_size(0) == 2
 
 
+def test_pack_keeps_unbounded_trailing_array_flexible() -> None:
+    import idaapi
+
+    tinfo = MagicMock()
+    tinfo.get_size.return_value = 4
+    tinfo.dstr.return_value = "int"
+    array = Member(offset=4, tinfo=tinfo, name="items", is_array=True)
+    model = StructureModel(items=[array])
+
+    with (
+        patch.object(idaapi, "ask_str", return_value="Recovered"),
+        patch.object(idaapi, "print_tinfo", return_value="struct Recovered {};"),
+        patch.object(idaapi, "ask_text", return_value=None),
+    ):
+        model.pack()
+
+    udm = idaapi.udt_type_data_t.return_value.push_back.call_args.args[0]
+    assert udm.offset == 4 * 8
+    assert udm.size == 0
+    udm.type.create_array.assert_called_with(tinfo, 0)
+
+
 def test_get_name_returns_default_when_no_vtable() -> None:
     m = StructureModel()
     m.add_row(AbstractMember(offset=0, name="a"))
@@ -405,6 +467,152 @@ def test_resolve_types_disables_worse_colliding_candidate() -> None:
 
     assert better.enabled is True
     assert worse.enabled is False
+
+
+def test_resolve_types_prefers_named_vtable_over_qword(monkeypatch) -> None:
+    import idaapi
+
+    from hexrays_pytools.domain.recon.discovered_vtable import DiscoveredVTable
+
+    monkeypatch.setattr(idaapi, "get_name", lambda _ea: "off_401000")
+    monkeypatch.setattr(idaapi, "is_ident", lambda _name: True)
+    monkeypatch.setattr(idaapi, "inf_is_64bit", lambda: True)
+    tinfo = MagicMock()
+    tinfo.dstr.return_value = "_QWORD"
+    tinfo.get_size.return_value = 8
+    tinfo.is_funcptr.return_value = False
+    tinfo.is_integral.return_value = True
+    tinfo.is_floating.return_value = False
+    generic = Member(offset=0, tinfo=tinfo)
+    vtable = DiscoveredVTable(offset=0, address=0x401000)
+    model = StructureModel(items=[generic, vtable])
+
+    model.resolve_types()
+
+    assert vtable.enabled is True
+    assert generic.enabled is False
+
+
+def test_resolve_types_subsumes_static_elements_into_array() -> None:
+    """Only observations before the next distinct field can be array elements."""
+    elem_tinfo = MagicMock()
+    elem_tinfo.get_size.return_value = 4
+    ptr_tinfo = MagicMock()
+    ptr_tinfo.get_size.return_value = 8
+
+    arr = Member(offset=4, tinfo=elem_tinfo, name="field_4", is_array=True)
+    element = Member(offset=16, tinfo=elem_tinfo, name="field_10")
+    bystander = Member(offset=36, tinfo=ptr_tinfo, name="field_24")
+    model = StructureModel(items=[arr, element, bystander])
+
+    model.resolve_types()
+
+    assert arr.enabled is True
+    assert arr.is_array is True
+    assert element.enabled is False, "items[3] at 16 = element of array@4"
+    assert bystander.enabled is True, "different-width member is not an element"
+
+
+def test_resolve_types_preserves_same_width_field_terminating_array() -> None:
+    tinfo = MagicMock()
+    tinfo.get_size.return_value = 4
+    array = Member(offset=4, tinfo=tinfo, name="items", is_array=True)
+    element = Member(offset=16, tinfo=tinfo, name="items_3")
+    following_field = Member(offset=36, tinfo=tinfo, name="tag")
+    model = StructureModel(items=[array, element, following_field])
+
+    model.resolve_types()
+
+    assert array.is_array is True
+    assert element.enabled is False
+    assert following_field.enabled is True
+    assert model.calculate_array_size(0) == 8
+
+
+def test_resolve_types_packs_sub_struct_only_with_sub_region_origin() -> None:
+    """Pack contiguous integer primitives into a sub-struct only on a sub-region scan.
+
+    TRex §3.3.4 aggregate analysis: ``helper(&p->u)`` produces members at
+    sub-offsets 0, 4 inside the ``u`` sub-region (origin 4) — they pack
+    into the inner struct. A top-level scan at origin 0 produces flat
+    outer-struct members that must NOT be re-packed (would contradict a
+    flat decomposition the scanner has no evidence against — §2.2).
+    """
+    int_t = MagicMock()
+    int_t.get_size.return_value = 4
+    int_t.is_integral.return_value = True
+    int_t.is_ptr.return_value = False
+    int_t.is_funcptr.return_value = False
+
+    sv_sub = MagicMock()
+    sv_sub.func_ea = 0x401500
+    sv_sub.name = "p"
+    sv_sub.origin = 4
+
+    a = Member(offset=0, tinfo=int_t, name="u_x", origin=4)
+    b = Member(offset=4, tinfo=int_t, name="u_y", origin=4)
+    a.scanned_variables = {sv_sub}
+    b.scanned_variables = {sv_sub}
+    model = StructureModel(items=[a, b])
+    model.resolve_types()
+    assert len(model.items) == 1, "sub-region pair should pack into one member"
+    packed = model.items[0]
+    assert int(packed.offset) == 4, "packed member lands at the sub-region's absolute offset"
+
+    # Reset and rebuild without packing (origin 0: no sub-region signal).
+    int_t2 = MagicMock()
+    int_t2.get_size.return_value = 4
+    int_t2.is_integral.return_value = True
+    int_t2.is_ptr.return_value = False
+    int_t2.is_funcptr.return_value = False
+    sv_top = MagicMock()
+    sv_top.func_ea = 0x401500
+    sv_top.name = "p"
+    sv_top.origin = 0
+    a2 = Member(offset=0, tinfo=int_t2, name="a", origin=0)
+    b2 = Member(offset=4, tinfo=int_t2, name="b", origin=0)
+    a2.scanned_variables = {sv_top}
+    b2.scanned_variables = {sv_top}
+    model2 = StructureModel(items=[a2, b2])
+    model2.resolve_types()
+    assert sorted([m.offset for m in model2.items]) == [0, 4], (
+        "origin=0 top-level scan must not pack — flat decomposition stays"
+    )
+
+
+def test_resolve_types_does_not_pack_pointer_or_funcptr_pairs() -> None:
+    """A pointer and a funcptr next to it are siblings, not a sub-struct.
+
+    The naïve pack guard lets the scanner merge any same-width adjacent
+    members with shared scanned origin — that mis-packs a callback-table
+    pointer next to a code pointer into a "sub-struct". Restrict packing
+    to plain integer primitives (no ptr, no funcptr).
+    """
+    func_t = MagicMock()
+    func_t.get_size.return_value = 8
+    func_t.is_integral.return_value = False
+    func_t.is_ptr.return_value = False
+    func_t.is_funcptr.return_value = True
+
+    data_t = MagicMock()
+    data_t.get_size.return_value = 8
+    data_t.is_integral.return_value = False
+    data_t.is_ptr.return_value = True
+    data_t.is_funcptr.return_value = False
+
+    sv = MagicMock()
+    sv.func_ea = 0x401500
+    sv.name = "p"
+    sv.origin = 4
+
+    cb = Member(offset=0, tinfo=func_t, name="cb", origin=4)
+    ctx = Member(offset=8, tinfo=data_t, name="ctx", origin=4)
+    cb.scanned_variables = {sv}
+    ctx.scanned_variables = {sv}
+    model = StructureModel(items=[cb, ctx])
+    model.resolve_types()
+    assert sorted([m.offset for m in model.items]) == [4, 12]
+
 
 
 def test_load_struct_uses_named_tinfo_and_skips_padding(monkeypatch) -> None:

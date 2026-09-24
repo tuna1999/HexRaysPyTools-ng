@@ -345,9 +345,14 @@ class RecursiveObjectVisitor(ObjectVisitor):
     Subclasses (:class:`RecursiveObjectDownwardsVisitor`,
     :class:`RecursiveObjectUpwardsVisitor`) walk across function
     boundaries by decompiling callees/callers. A ``_visited`` set of
-    ``(func_ea, arg_idx)`` tuples prevents infinite recursion; a
-    ``_new_for_visit`` queue collects targets discovered during one pass
-    and is drained afterward.
+    ``(func_ea, arg_idx)`` tuples prevent infinite recursion; a
+    ``_new_for_visit`` queue collects ``(func_ea, arg_idx, sub_offset)``
+    triples discovered during one pass and is drained afterward. The
+    optional ``sub_offset`` (added for sub-region calls like
+    ``helper(&obj->u)``) is the extra offset the callee's argument
+    pointer sits at within the parent's struct — the drain sets it as
+    ``self._origin`` so the callee scan emits members at the correct
+    absolute offset.
 
     The four lifecycle hooks (``_start``, ``_start_iteration``,
     ``_finish``, ``_finish_iteration``) let subclasses inject per-function
@@ -365,7 +370,7 @@ class RecursiveObjectVisitor(ObjectVisitor):
     ) -> None:
         super().__init__(cfunc, obj, data, skip_until_object)
         self._visited: set[tuple[int, int]] = visited if visited else set()
-        self._new_for_visit: set[tuple[int, int]] = set()
+        self._new_for_visit: set[tuple[int, int, int]] = set()
         self.crippled = False
         self._arg_idx: int = -1
         # Session-owned import cache (replaces the original cache.imported_ea
@@ -434,16 +439,23 @@ class RecursiveObjectVisitor(ObjectVisitor):
         """Detect calls worth recursing into. Subclasses override."""
         raise NotImplementedError("Subclasses must implement _check_call")
 
-    def _add_visit(self, func_ea: int, arg_idx: int) -> bool:
-        """Record a (func, arg) to recurse into. Returns True if new."""
-        key = (int(func_ea), int(arg_idx))
-        if key in self._visited:
+    def _add_visit(self, func_ea: int, arg_idx: int, sub_offset: int = 0) -> bool:
+        """Record a (func, arg, sub_offset) to recurse into. Returns True if new.
+
+        ``sub_offset`` is the byte offset the callee's argument pointer
+        sits at within the parent's struct (0 for direct-arg calls,
+        non-zero for sub-region calls like ``helper(&obj->u)``). The
+        drain sets it as the scan origin so the callee scan emits
+        members at the correct absolute offset.
+        """
+        visit_key = (int(func_ea), int(arg_idx))
+        if visit_key in self._visited:
             return False
-        self._visited.add(key)
-        self._new_for_visit.add(key)
+        self._visited.add(visit_key)
+        self._new_for_visit.add((int(func_ea), int(arg_idx), int(sub_offset)))
         return True
 
-    def _add_scan_tree_info(self, func_ea: int, arg_idx: int) -> None:
+    def _add_scan_tree_info(self, func_ea: int, arg_idx: int, sub_offset: int = 0) -> None:
         """Append a node to the debug scan-tree (for logging)."""
         try:
             head_node = (idaapi.get_name(int(self._cfunc.entry_ea)), self._arg_idx)
@@ -518,12 +530,30 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
         super().__init__(cfunc, obj, data, skip_until_object, visited, imported_ea)
 
     def _check_call(self, cexpr: Any) -> None:
-        """If the tracked object is a call argument, queue the callee for scanning."""
+        """If the tracked object is a call argument, queue the callee for scanning.
+
+        Recognises two call-arg shapes (the tracked object is ``obj``):
+          * ``callee(obj)`` — direct arg
+          * ``callee((T)obj)`` — cast-wrapped arg
+
+        Sub-region shapes (``callee(obj + off)``, ``callee(&obj->u)``) were
+        explored in segment 3 iteration 4 but introduced over-matching
+        noise on the fixture without metric gain (strict offset+size
+        scorer cannot credit nested UDT sub-structures, and ``_origin``
+        propagation in the same visitor instance is fragile under mixed
+        queue contents). The 3-tuple queue shape carries a ``sub_offset``
+        slot for future use.
+        """
         parent = self.parent_expr()
         if parent is None:
             return
         parents_size = int(self.parents.size())
         grandparent = self.parents.at(parents_size - 2) if parents_size >= 2 else None
+
+        call_cexpr: Any = None
+        arg_cexpr: Any = None
+        sub_offset: int = 0
+
         if int(parent.op) == int(idaapi.cot_call):
             call_cexpr = parent
             arg_cexpr = cexpr
@@ -535,6 +565,10 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
             call_cexpr = grandparent.cexpr
             arg_cexpr = parent
         else:
+            return
+        # Only cot_obj carries an address; indirect calls have a typed callee
+        # expression but no concrete function to recurse into.
+        if int(call_cexpr.x.op) != int(idaapi.cot_obj):
             return
         idx, _ = get_call_argument_info(call_cexpr, arg_cexpr)
         if idx == -1:
@@ -551,14 +585,14 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
                 idx,
             )
             return
-        if self._add_visit(func_ea, idx):
+        if self._add_visit(func_ea, idx, sub_offset):
             logger.debug(
                 "[HexRaysPyTools][Deep Scan Call] caller=0x%X -> callee=0x%X arg=%d",
                 int(self._cfunc.entry_ea),
                 func_ea,
                 idx,
             )
-            self._add_scan_tree_info(func_ea, idx)
+            self._add_scan_tree_info(func_ea, idx, sub_offset)
         else:
             logger.debug(
                 "[HexRaysPyTools][Deep Scan Call] caller=0x%X -> callee=0x%X arg=%d skipped: already visited",
@@ -567,11 +601,53 @@ class RecursiveObjectDownwardsVisitor(RecursiveObjectVisitor, ObjectDownwardsVis
                 idx,
             )
 
+    def _maybe_follow_thunk(self) -> None:
+        """Follow an argumentless tail-call thunk: ``return callee();``.
+
+        Compilers (gcc -O2 tail calls) turn wrappers into thunks whose ctree
+        shows no argument use at all — the object is forwarded in a register,
+        so a scan of the thunk finds nothing. When the sole statement is a
+        zero-argument tail call, the seed argument register reaches the
+        callee unchanged (ABI passthrough — exactly what a reverse engineer
+        follows manually), so queue the callee's matching argument.
+        """
+        if self._visited or not self._is_func_crippled():
+            return
+        stmt = self._cfunc.body.cblock.at(0)
+        call = None
+        try:
+            if int(stmt.op) == int(idaapi.cit_return):
+                call = stmt.creturn.expr
+            elif int(stmt.op) == int(idaapi.cit_expr):
+                call = stmt.cexpr
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return
+        if call is None or int(call.op) != int(idaapi.cot_call):
+            return
+        try:
+            if int(call.a.size()) != 0:
+                return  # visible argument — the normal _check_call path owns it
+            func_ea = int(call.x.obj_ea)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return
+        if func_ea == int(idaapi.BADADDR) or is_imported_ea(func_ea, self._imported_ea):
+            return
+        arg_idx = int(getattr(self._objects[0], "index", 0)) if self._objects else 0
+        if self._add_visit(func_ea, arg_idx):
+            logger.debug(
+                "[HexRaysPyTools][Deep Scan Thunk] caller=0x%X -> callee=0x%X arg=%d",
+                int(self._cfunc.entry_ea),
+                func_ea,
+                arg_idx,
+            )
+            self._add_scan_tree_info(func_ea, arg_idx)
+
     def _recursive_process(self) -> None:
         """Walk this function, then drain the callee queue recursively."""
+        self._maybe_follow_thunk()
         super()._recursive_process()
         while self._new_for_visit:
-            func_ea, arg_idx = self._new_for_visit.pop()
+            func_ea, arg_idx, sub_offset = self._new_for_visit.pop()
             if is_imported_ea(func_ea, self._imported_ea):
                 continue
             cfunc = decompile_function(func_ea)
@@ -636,7 +712,7 @@ class RecursiveObjectUpwardsVisitor(RecursiveObjectVisitor, ObjectUpwardsVisitor
         while self._new_for_visit:
             new_visit = list(self._new_for_visit)
             self._new_for_visit.clear()
-            for func_ea, arg_idx in new_visit:
+            for func_ea, arg_idx, _sub_offset in new_visit:
                 callers = get_funcs_calling_address(func_ea)
                 callee_cfunc = decompile_function(func_ea)
                 if callee_cfunc is None:

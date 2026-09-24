@@ -26,6 +26,17 @@ hcli plugin install dist/hexrays_pytools_ng-1.0.0.zip
 - **Code manipulation** — Recast (Shift+L, Shift+R), Rename (Ctrl+N, Shift+N, Ctrl+Shift+N, Ctrl+Alt+N), Swap If/Else (Shift+Alt+S)
 - **Field cross-references** — Find Field Xrefs (Ctrl+X), shown in Structure Builder
 
+The Structure Builder combines repeated ordinary field accesses to the same offset and type into one
+candidate while retaining their scan origins. Different types at an offset remain
+separate candidates for conflict resolution.
+
+Array lengths use the distance to the next retained field (a heuristic).
+A trailing array without a known bound is exported as a flexible array
+(`items[]`); its fixed length cannot be recovered from dynamic indexing alone.
+
+Deep Scan follows calls with known destinations; indirect calls are not
+recursed into.
+
 See [docs/architecture.md](docs/architecture.md) for the internal design.
 
 ## Development
